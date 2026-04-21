@@ -770,6 +770,58 @@ html, body {
 }
 
 /* ============================================
+   多人模式選擇
+   ============================================ */
+.mp-mode-grid {
+    display: flex;
+    gap: 30px;
+    max-width: 800px;
+    margin-bottom: 20px;
+}
+
+.mp-mode-card {
+    flex: 1;
+    background: linear-gradient(180deg, rgba(40, 20, 70, 0.8), rgba(20, 10, 40, 0.95));
+    border: 2px solid #5a3a8a;
+    border-radius: 12px;
+    padding: 32px 28px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    color: #e8d9ff;
+    font-family: inherit;
+    text-align: center;
+    min-width: 240px;
+}
+
+.mp-mode-card:hover {
+    transform: translateY(-3px);
+    border-color: #bb88ff;
+    box-shadow: 0 0 30px rgba(180, 120, 255, 0.5);
+    background: linear-gradient(180deg, rgba(70, 35, 110, 0.9), rgba(30, 15, 50, 0.95));
+}
+
+.mp-mode-icon {
+    font-size: 3rem;
+    color: #ffcc66;
+    text-shadow: 0 0 20px #cc8844;
+    margin-bottom: 10px;
+}
+
+.mp-mode-name {
+    font-size: 1.4rem;
+    color: #d9b3ff;
+    font-weight: bold;
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+}
+
+.mp-mode-desc {
+    font-size: 0.88rem;
+    color: #a088bb;
+    line-height: 1.5;
+}
+
+/* ============================================
    多人連線 Lobby & 房間
    ============================================ */
 .mp-lobby-content {

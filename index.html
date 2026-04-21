@@ -22,7 +22,7 @@
             <div class="menu-buttons">
                 <button class="menu-btn" data-action="start">開始冒險</button>
                 <button class="menu-btn" data-action="infinite">無限模式</button>
-                <button class="menu-btn" data-action="multiplayer">1v1 連線</button>
+                <button class="menu-btn" data-action="multiplayer">多人遊戲</button>
                 <button class="menu-btn" data-action="skills">技能</button>
                 <button class="menu-btn" data-action="shop">商城</button>
                 <button class="menu-btn" data-action="practice">符文練習</button>
@@ -30,6 +30,24 @@
                 <button class="menu-btn" data-action="settings">設定</button>
             </div>
             <div class="menu-hint">拖曳滑鼠 / 觸控板繪製符文 · WASD 移動 · Esc 暫停</div>
+        </div>
+
+        <!-- 多人遊戲: 模式選擇 -->
+        <div id="mp-mode-select" class="screen">
+            <h2 class="screen-title">多人遊戲</h2>
+            <div class="mp-mode-grid">
+                <button class="mp-mode-card" data-action="mp-mode-1v1">
+                    <div class="mp-mode-icon">⚔</div>
+                    <div class="mp-mode-name">1v1 對戰</div>
+                    <div class="mp-mode-desc">單挑決鬥，靠技巧打敗對手</div>
+                </button>
+                <button class="mp-mode-card" data-action="mp-mode-2v2">
+                    <div class="mp-mode-icon">⚔⚔</div>
+                    <div class="mp-mode-name">2v2 組隊對戰</div>
+                    <div class="mp-mode-desc">雙人組隊，團隊配合才能致勝</div>
+                </button>
+            </div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
         </div>
 
         <!-- 多人連線 Lobby -->
@@ -103,6 +121,7 @@
             <div class="modal-content">
                 <h2 id="mp-result-title">勝利！</h2>
                 <div id="mp-result-stats"></div>
+                <button class="menu-btn" data-action="mp-rematch">返回房間</button>
                 <button class="menu-btn" data-action="mp-leave">離開房間</button>
             </div>
         </div>

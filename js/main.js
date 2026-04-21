@@ -74,21 +74,27 @@
         mp: {
             active: false,
             isHost: false,
+            teamMode: '1v1',      // '1v1' | '2v2'
+            myTeam: 0,             // 我方隊伍 (0 or 1)
+            mySlot: 0,             // 在房間內的 slot (0~3)
             mapId: 'grassland',
-            obstacles: [],        // 絕對座標障礙物
-            rounds: 3,            // BO
+            obstacles: [],
+            rounds: 3,
             myWins: 0,
             oppWins: 0,
             roundNum: 0,
-            roundState: 'idle',   // idle / countdown / playing / over
+            roundState: 'idle',
             countdown: 0,
+            // 1v1 單一對手 (teamMode='1v1' 時使用)
             opponent: {
                 x: 0, y: 0, hp: 100, maxHp: 100,
                 facing: 1, alive: true,
                 lastUpdate: 0,
                 bobPhase: 0, hitFlash: 0
             },
-            sendTimer: 0          // 傳送自身狀態節流
+            // 2v2 多人: 其他 3 個玩家 (key = slot)
+            players: {},           // { 1: {x,y,hp,team,alive,...}, 2: {...}, 3: {...} }
+            sendTimer: 0
         }
     };
     const LOADOUT_MAX = 5;
@@ -811,6 +817,10 @@
 
         let comboBonus = 1 + (game.combo - 1) * COMBO_DAMAGE_BONUS;
         if (game.activeBuffs.damage > 0) comboBonus *= 1.5;
+        // PvP 平衡: 全域傷害倍率
+        if (game.state === 'pvp' && game.mp && game.mp.active) {
+            comboBonus *= window.Spells.pvpMul(result.name);
+        }
         castSpell(result.name, critical, comboBonus, trail, level);
         if (onCast) onCast(result.name, critical);
     }
@@ -1334,20 +1344,40 @@
     }
 
     function setupMpHandlers() {
-        window.Multiplayer.on('open', () => {
-            // 連線成功 — 進房間畫面
+        window.Multiplayer.on('open', (conn) => {
             if (window.Multiplayer.isHost()) {
-                document.getElementById('mp-opp-slot').querySelector('.mp-slot-status').textContent = '✓ 已連線';
-                document.getElementById('mp-start-btn').disabled = false;
-                document.getElementById('mp-start-btn').textContent = '開始對戰';
-                // 主動把目前設定送給對方
-                window.Multiplayer.send({
-                    type: 'config',
+                // 新加入的訪客 — 指派 slot (1, 2, 3 順序)
+                const usedSlots = new Set([0]);
+                for (const slot in game.mp.players) usedSlots.add(parseInt(slot, 10));
+                let assignSlot = -1;
+                for (let s = 1; s <= 3; s++) {
+                    if (!usedSlots.has(s)) { assignSlot = s; break; }
+                }
+                if (assignSlot === -1) return; // 房間滿了 (理論上不該觸發, multiplayer.js 已擋)
+                // 2v2 隊伍分配: 0&2 vs 1&3
+                const team = assignSlot % 2;
+                game.mp.players[assignSlot] = {
+                    slot: assignSlot, team: team,
+                    x: 0, y: 0, hp: 100, maxHp: 100,
+                    alive: true, hitFlash: 0, bobPhase: Math.random() * Math.PI * 2,
+                    connId: conn && conn.peer ? conn.peer : null
+                };
+                // 送 slot 指派 + 當前 config
+                const connObj = (conn && conn.send) ? conn : null;
+                const msg = {
+                    type: 'assignSlot',
+                    slot: assignSlot, team: team,
+                    teamMode: game.mp.teamMode,
                     mapId: document.getElementById('mp-map-select').value,
                     rounds: parseInt(document.getElementById('mp-rounds-select').value, 10)
-                });
+                };
+                if (connObj) { try { connObj.send(msg); } catch (e) {} }
+                else window.Multiplayer.send(msg);
+                // 廣播 lobby 狀態
+                broadcastLobby();
+                updateRoomUI();
             } else {
-                // 訪客: 進入房間畫面, 等主機 'start'
+                // 訪客: 進入房間畫面, 等主機 'assignSlot'
                 window.UI.showScreen('mp-room');
                 document.getElementById('mp-code-display').textContent = window.Multiplayer.getCode();
                 document.getElementById('mp-host-config').classList.add('hidden');
@@ -1358,7 +1388,21 @@
             }
         });
         window.Multiplayer.on('data', handleMpData);
-        window.Multiplayer.on('close', () => {
+        window.Multiplayer.on('close', (conn) => {
+            // 2v2: 單一訪客離線時, 若房主在等待大廳, 只更新 UI 不結束
+            if (window.Multiplayer.isHost() && !game.mp.active) {
+                // 從 players 移除對應的 slot
+                const peerId = conn && conn.peer;
+                for (const s in game.mp.players) {
+                    if (game.mp.players[s].connId === peerId) {
+                        delete game.mp.players[s];
+                        break;
+                    }
+                }
+                broadcastLobby();
+                updateRoomUI();
+                return;
+            }
             if (game.mp.active) {
                 endMpMatch('對手已離線', 'forfeit-opp-leave');
             } else {
@@ -1372,15 +1416,23 @@
 
     function hostRoom() {
         setupMpHandlers();
+        const capacity = game.mp.teamMode === '2v2' ? 4 : 2;
+        // 房主固定 slot 0 team 0
+        game.mp.mySlot = 0;
+        game.mp.myTeam = 0;
+        game.mp.players = {};
         window.Multiplayer.host((code) => {
-            // 有 code 後切到房間畫面
             window.UI.showScreen('mp-room');
             document.getElementById('mp-code-display').textContent = code;
             document.getElementById('mp-host-config').classList.remove('hidden');
             document.getElementById('mp-start-btn').disabled = true;
-            document.getElementById('mp-start-btn').textContent = '等待對手...';
+            const needed = capacity - 1;
+            document.getElementById('mp-start-btn').textContent = `等待 ${needed} 位對手...`;
             document.getElementById('mp-opp-slot').querySelector('.mp-slot-status').textContent = '等待中...';
-        }, (err) => showMpStatus('無法開房: ' + err, true));
+            // 顯示模式
+            const modeLbl = document.getElementById('mp-room-mode');
+            if (modeLbl) modeLbl.textContent = game.mp.teamMode.toUpperCase();
+        }, (err) => showMpStatus('無法開房: ' + err, true), capacity);
     }
 
     function joinRoom(code) {
@@ -1402,15 +1454,91 @@
         window.UI.showControlsHint(false);
     }
 
+    // 返回房間等下一場對戰 (不斷線, 重置比數)
+    function rematchMp() {
+        const mp = game.mp;
+        mp.active = false;
+        mp.myWins = 0;
+        mp.oppWins = 0;
+        mp.roundNum = 0;
+        mp.roundState = 'idle';
+        document.getElementById('mp-result').classList.add('hidden');
+        window.UI.showControlsHint(false);
+        // 告知對方返回房間
+        window.Multiplayer.send({ type: 'rematch' });
+        window.UI.showScreen('mp-room');
+        // 房主重置按鈕
+        if (window.Multiplayer.isHost()) {
+            const btn = document.getElementById('mp-start-btn');
+            btn.disabled = !window.Multiplayer.isConnected();
+            btn.textContent = window.Multiplayer.isConnected() ? '開始對戰' : '等待對手...';
+        }
+    }
+
+    function broadcastLobby() {
+        // 房主把當前玩家 slot 資料廣播給所有訪客 (讓他們知道隊友/對手)
+        const players = {};
+        for (const s in game.mp.players) {
+            const p = game.mp.players[s];
+            players[s] = { slot: p.slot, team: p.team };
+        }
+        window.Multiplayer.send({
+            type: 'lobby',
+            players: players,
+            teamMode: game.mp.teamMode,
+            capacity: game.mp.teamMode === '2v2' ? 4 : 2
+        });
+    }
+
+    function updateRoomUI() {
+        // 依連線數更新房主啟動按鈕
+        if (!window.Multiplayer.isHost()) return;
+        const needed = (game.mp.teamMode === '2v2' ? 4 : 2) - 1;
+        const have = window.Multiplayer.connectionCount();
+        const btn = document.getElementById('mp-start-btn');
+        if (have >= needed) {
+            btn.disabled = false;
+            btn.textContent = '開始對戰';
+        } else {
+            btn.disabled = true;
+            btn.textContent = `等待 ${needed - have} 位對手...`;
+        }
+        const oppSlot = document.getElementById('mp-opp-slot');
+        if (oppSlot) oppSlot.querySelector('.mp-slot-status').textContent = have > 0 ? `${have} / ${needed} 已連線` : '等待中...';
+    }
+
     function handleMpData(data) {
         if (!data || typeof data !== 'object') return;
         const mp = game.mp;
         switch (data.type) {
             case 'config':
-                // 訪客從房主收到地圖 + 回合數
                 mp.mapId = data.mapId;
                 mp.rounds = data.rounds;
                 document.getElementById('mp-opp-slot').querySelector('.mp-slot-status').textContent = '房主已設定';
+                break;
+            case 'assignSlot':
+                // 訪客收到自己的 slot 與隊伍
+                mp.mySlot = data.slot;
+                mp.myTeam = data.team;
+                mp.teamMode = data.teamMode || '1v1';
+                mp.mapId = data.mapId || mp.mapId;
+                mp.rounds = data.rounds || mp.rounds;
+                document.getElementById('mp-opp-slot').querySelector('.mp-slot-status').textContent =
+                    `房主: ${mp.teamMode.toUpperCase()} 模式 / Slot ${data.slot} (隊伍 ${data.team + 1})`;
+                break;
+            case 'lobby':
+                // 訪客收到當前 lobby 組成
+                mp.teamMode = data.teamMode || mp.teamMode;
+                mp.players = {};
+                for (const s in data.players) {
+                    const src = data.players[s];
+                    if (parseInt(s, 10) === mp.mySlot) continue;   // 自己不放進去
+                    mp.players[s] = {
+                        slot: src.slot, team: src.team,
+                        x: 0, y: 0, hp: 100, maxHp: 100,
+                        alive: true, hitFlash: 0, bobPhase: 0
+                    };
+                }
                 break;
             case 'start':
                 mp.mapId = data.mapId || mp.mapId;
@@ -1418,20 +1546,31 @@
                 beginMpMatch(false);
                 break;
             case 'state':
-                mp.opponent.x = data.x;
-                mp.opponent.y = data.y;
-                mp.opponent.hp = data.hp;
-                mp.opponent.maxHp = data.maxHp;
-                mp.opponent.alive = data.hp > 0;
-                mp.opponent.lastUpdate = performance.now();
+                // 2v2: 根據 slot 更新; 1v1: 更新 opponent
+                if (data.slot !== undefined && mp.teamMode === '2v2') {
+                    const p = mp.players[data.slot];
+                    if (p) {
+                        p.x = data.x; p.y = data.y;
+                        p.hp = data.hp; p.maxHp = data.maxHp;
+                        p.alive = data.hp > 0;
+                    }
+                } else {
+                    mp.opponent.x = data.x;
+                    mp.opponent.y = data.y;
+                    mp.opponent.hp = data.hp;
+                    mp.opponent.maxHp = data.maxHp;
+                    mp.opponent.alive = data.hp > 0;
+                    mp.opponent.lastUpdate = performance.now();
+                }
                 break;
             case 'cast':
                 // 對手發射技能 — 本端產生對應視覺 (發射者 = 對手)
                 spawnRemoteCast(data);
                 break;
             case 'hit':
-                // 僅在對戰進行中接受傷害
                 if (mp.roundState !== 'playing') break;
+                // 2v2: 只有 data.target 是自己 slot 才吃傷害
+                if (data.target !== undefined && data.target !== mp.mySlot) break;
                 onPlayerHit(data.damage, { kind: data.spell, x: data.x, y: data.y });
                 break;
             case 'roundOver':
@@ -1454,6 +1593,22 @@
                 break;
             case 'leave':
                 endMpMatch('對手離開了', 'forfeit');
+                break;
+            case 'rematch':
+                // 對方點了返回房間
+                if (game.mp.active) {
+                    // 若我方還在對戰中, 視為對方投降
+                    endMpMatch('對手結束對戰', 'forfeit');
+                } else {
+                    // 我也回到房間
+                    game.mp.myWins = 0;
+                    game.mp.oppWins = 0;
+                    game.mp.roundNum = 0;
+                    game.mp.roundState = 'idle';
+                    document.getElementById('mp-result').classList.add('hidden');
+                    window.UI.showScreen('mp-room');
+                    window.UI.showControlsHint(false);
+                }
                 break;
         }
     }
@@ -1515,16 +1670,13 @@
         game.waves = [];
         game.infinite = false;
         game.level = 0;
-        // 切畫面 + 重置玩家
         window.UI.hideResult();
         document.getElementById('mp-result').classList.add('hidden');
         window.UI.showScreen('game-screen');
         resizeCanvas();
         const size = getCanvasSize();
-        // 產生地圖絕對座標障礙物
         const abs = window.Maps.getAbs(mp.mapId, size.w, size.h);
         mp.obstacles = abs ? abs.obstacles : [];
-        // 玩家位置: 房主左, 訪客右
         game.player.maxHp = 100 + game.statUpgrades.hp * 10;
         game.player.maxMp = 100 + game.statUpgrades.mp * 10;
         game.player.hp = game.player.maxHp;
@@ -1532,9 +1684,34 @@
         game.player.shieldActive = false;
         game.player.shieldBlocks = 0;
         game.player.shieldTimer = 0;
-        game.player.x = mp.isHost ? size.w * 0.18 : size.w * 0.82;
-        game.player.y = size.h * 0.5;
-        // 對手位置
+        // 自己 slot / team 決定位置
+        const is2v2 = mp.teamMode === '2v2';
+        const myTeam = mp.myTeam || 0;
+        const spawnPositionsByTeam = is2v2 ? {
+            0: [[0.15, 0.35], [0.15, 0.75]],
+            1: [[0.85, 0.35], [0.85, 0.75]]
+        } : {
+            0: [[0.18, 0.5]],
+            1: [[0.82, 0.5]]
+        };
+        // 自己位置 — 看 slot 在隊伍內的順序
+        const myPosIdx = Math.floor(mp.mySlot / 2);
+        const myPos = spawnPositionsByTeam[myTeam][myPosIdx] || spawnPositionsByTeam[myTeam][0];
+        game.player.x = size.w * myPos[0];
+        game.player.y = size.h * myPos[1];
+        // 其他玩家位置
+        if (is2v2) {
+            for (const s in mp.players) {
+                const p = mp.players[s];
+                p.hp = 100; p.maxHp = 100; p.alive = true; p.hitFlash = 0;
+                const team = p.team;
+                const posIdx = Math.floor(p.slot / 2);
+                const pos = spawnPositionsByTeam[team][posIdx] || spawnPositionsByTeam[team][0];
+                p.x = size.w * pos[0];
+                p.y = size.h * pos[1];
+            }
+        }
+        // 1v1 兼容 opponent
         mp.opponent.x = mp.isHost ? size.w * 0.82 : size.w * 0.18;
         mp.opponent.y = size.h * 0.5;
         mp.opponent.hp = 100;
@@ -2352,30 +2529,35 @@
         game.player.hitFlash = Math.max(0, game.player.hitFlash - dt * 2);
         mp.opponent.bobPhase = (mp.opponent.bobPhase || 0) + dt * 2;
         mp.opponent.hitFlash = Math.max(0, (mp.opponent.hitFlash || 0) - dt * 2);
+        updatePlayersAnim(dt);
 
-        // 投射物 (對手為目標)
-        window.Spells.updateProjectiles(dt, [mpOpponentAsEnemy()], (proj, target) => {
-            // 本地告知對方扣血, 對方 state 會回報 HP
+        // 投射物目標: 2v2 列出所有敵隊活人, 1v1 仍用單一對手
+        const enemyTargets = getEnemyTargets();
+        const handleHit = (proj, target) => {
+            const damage = proj.damage;
+            const spell = proj.kind || 'aoe';
+            const targetSlot = target._slot !== undefined ? target._slot : undefined;
             window.Multiplayer.send({
-                type: 'hit',
-                damage: proj.damage,
-                spell: proj.kind,
-                x: target.x, y: target.y
+                type: 'hit', damage: damage, spell: spell,
+                x: target.x, y: target.y,
+                target: targetSlot
             });
-            // 本地視覺: 傷害數字 + 震動
-            spawnDamageNumber(target.x, target.y, proj.damage, proj.critical);
-            mp.opponent.hitFlash = 1;
-            // 預估扣血 (等對方 state 回來時會同步)
-            mp.opponent.hp = Math.max(0, mp.opponent.hp - proj.damage);
-            if (mp.opponent.hp <= 0) localRoundDecided(true);
+            spawnDamageNumber(target.x, target.y, damage, proj.critical);
+            // 預估: 本端先扣對應 target
+            applyLocalDamageToTarget(target, damage);
             triggerShake(proj.critical ? 5 : 2, 0.1);
             window.UI.playSfx('hit');
-        });
-        window.Spells.updateMeteors(dt, [mpOpponentAsEnemy()], (proj, target) => {
-            window.Multiplayer.send({ type: 'hit', damage: proj.damage, spell: 'meteor', x: target.x, y: target.y });
-            spawnDamageNumber(target.x, target.y, proj.damage, proj.critical);
-            mp.opponent.hp = Math.max(0, mp.opponent.hp - proj.damage);
-            if (mp.opponent.hp <= 0) localRoundDecided(true);
+        };
+        window.Spells.updateProjectiles(dt, enemyTargets, handleHit);
+        window.Spells.updateMeteors(dt, enemyTargets, (proj, target) => {
+            const damage = proj.damage;
+            window.Multiplayer.send({
+                type: 'hit', damage: damage, spell: 'meteor',
+                x: target.x, y: target.y,
+                target: target._slot
+            });
+            spawnDamageNumber(target.x, target.y, damage, proj.critical);
+            applyLocalDamageToTarget(target, damage);
             if (!proj._shocked) {
                 proj._shocked = true;
                 window.Spells.createShockwave(proj.x || target.x, proj.y || target.y, 180, '#ffaa33', 0.8);
@@ -2383,11 +2565,15 @@
             }
         });
         window.Spells.updateLightning(dt);
-        window.Spells.updatePoisonFields(dt, [mpOpponentAsEnemy()], (proj, target) => {
-            window.Multiplayer.send({ type: 'hit', damage: proj.damage, spell: 'poison', x: target.x, y: target.y });
-            spawnDamageNumber(target.x, target.y - 10, proj.damage, false);
-            mp.opponent.hp = Math.max(0, mp.opponent.hp - proj.damage);
-            if (mp.opponent.hp <= 0) localRoundDecided(true);
+        window.Spells.updatePoisonFields(dt, enemyTargets, (proj, target) => {
+            const damage = proj.damage;
+            window.Multiplayer.send({
+                type: 'hit', damage: damage, spell: 'poison',
+                x: target.x, y: target.y,
+                target: target._slot
+            });
+            spawnDamageNumber(target.x, target.y - 10, damage, false);
+            applyLocalDamageToTarget(target, damage);
         });
         window.Spells.updateShockwaves(dt);
         window.Spells.updateMeleeArcs(dt);
@@ -2398,12 +2584,13 @@
 
         window.Particles.update(dt);
 
-        // 送自身狀態 (~20hz)
+        // 送自身狀態 (~20hz) — 2v2 需附 slot
         mp.sendTimer += dt;
         if (mp.sendTimer > 0.05) {
             mp.sendTimer = 0;
             window.Multiplayer.send({
                 type: 'state',
+                slot: mp.mySlot,
                 x: game.player.x, y: game.player.y,
                 hp: game.player.hp, maxHp: game.player.maxHp
             });
@@ -2418,7 +2605,7 @@
     }
 
     function mpOpponentAsEnemy() {
-        // 把對手包成 enemy-like 物件供 Spells.update* 使用
+        // 1v1: 把單一對手包成 enemy-like 物件
         const opp = game.mp.opponent;
         return {
             x: opp.x, y: opp.y,
@@ -2426,8 +2613,67 @@
             hp: opp.hp, maxHp: opp.maxHp,
             dead: !opp.alive || opp.hp <= 0,
             def: { reward: 0 },
-            hitFlash: 0, slowedUntil: 0, slowFactor: 1
+            hitFlash: 0, slowedUntil: 0, slowFactor: 1,
+            _isOpp: true
         };
+    }
+
+    // 取得所有敵隊活人 (供投射物碰撞用, 2v2 多個, 1v1 單一)
+    function getEnemyTargets() {
+        const mp = game.mp;
+        if (mp.teamMode === '2v2') {
+            const arr = [];
+            for (const s in mp.players) {
+                const p = mp.players[s];
+                if (p.team !== mp.myTeam && p.alive && p.hp > 0) {
+                    arr.push({
+                        x: p.x, y: p.y,
+                        radius: 40,
+                        hp: p.hp, maxHp: p.maxHp,
+                        dead: false,
+                        def: { reward: 0 },
+                        hitFlash: 0, slowedUntil: 0, slowFactor: 1,
+                        _slot: p.slot
+                    });
+                }
+            }
+            return arr;
+        }
+        return [mpOpponentAsEnemy()];
+    }
+
+    function applyLocalDamageToTarget(target, damage) {
+        const mp = game.mp;
+        if (target._slot !== undefined && mp.teamMode === '2v2') {
+            const p = mp.players[target._slot];
+            if (p) {
+                p.hp = Math.max(0, p.hp - damage);
+                p.hitFlash = 1;
+                if (p.hp <= 0) p.alive = false;
+                checkTeamsAndMaybeEndRound();
+            }
+        } else {
+            mp.opponent.hp = Math.max(0, mp.opponent.hp - damage);
+            mp.opponent.hitFlash = 1;
+            if (mp.opponent.hp <= 0 && mp.roundState === 'playing') localRoundDecided(true);
+        }
+    }
+
+    // 2v2 檢查隊伍全滅
+    function checkTeamsAndMaybeEndRound() {
+        const mp = game.mp;
+        if (mp.teamMode !== '2v2' || mp.roundState !== 'playing') return;
+        // 我方是否已全滅?
+        let myTeamAlive = game.player.hp > 0 ? 1 : 0;
+        let enemyTeamAlive = 0;
+        for (const s in mp.players) {
+            const p = mp.players[s];
+            if (!p.alive || p.hp <= 0) continue;
+            if (p.team === mp.myTeam) myTeamAlive++;
+            else enemyTeamAlive++;
+        }
+        if (enemyTeamAlive === 0) localRoundDecided(true);
+        else if (myTeamAlive === 0) localRoundDecided(false);
     }
 
     /** 判斷本回合結束: win=true 代表我贏 */
@@ -2475,8 +2721,14 @@
 
         // 玩家
         drawPlayer();
-        // 對手 (以玩家繪圖風格 + 不同色調)
-        drawOpponent();
+        // 對手: 2v2 畫所有其他玩家, 1v1 畫單一 opponent
+        if (game.mp.teamMode === '2v2') {
+            for (const s in game.mp.players) {
+                drawOtherPlayer(game.mp.players[s]);
+            }
+        } else {
+            drawOpponent();
+        }
 
         // 投射物 / 閃電 / 流星 / 衝擊 / 近戰
         window.Spells.renderProjectiles(ctx);
@@ -2598,6 +2850,114 @@
             ctx.fill();
         }
         ctx.restore();
+    }
+
+    // 2v2: 繪製其他玩家 (隊友綠色 / 敵人紅色)
+    function drawOtherPlayer(p) {
+        if (!p || !p.alive) return;
+        const isEnemy = p.team !== game.mp.myTeam;
+        const tint = isEnemy
+            ? { aura: 'rgba(255, 120, 130, 0.6)', robe1: '#a02838', robe2: '#2a0812', hood: '#3a0a14', eye: '#ffaa88', eyeGlow: '#ff3344' }
+            : { aura: 'rgba(120, 255, 140, 0.5)', robe1: '#2a8838', robe2: '#0a2814', hood: '#0a2a14', eye: '#aaffaa', eyeGlow: '#44ff66' };
+        const bob = Math.sin(p.bobPhase || 0) * 4;
+        const px = p.x | 0;
+        const py = (p.y + bob) | 0;
+        const r = 40;
+        const TWO_PI = 6.283185307179586;
+        ctx.save();
+        // 陰影
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.beginPath();
+        ctx.ellipse(px, py + r + 18, r * 0.85, 8, 0, 0, TWO_PI);
+        ctx.fill();
+        // 光環
+        ctx.globalCompositeOperation = 'lighter';
+        const aura = ctx.createRadialGradient(px, py, 10, px, py, r + 20);
+        aura.addColorStop(0, tint.aura);
+        aura.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = aura;
+        ctx.beginPath();
+        ctx.arc(px, py, r + 20, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        // 長袍
+        const robe = ctx.createLinearGradient(px, py - r * 0.3, px, py + r * 1.4);
+        robe.addColorStop(0, tint.robe1);
+        robe.addColorStop(1, tint.robe2);
+        ctx.fillStyle = robe;
+        ctx.beginPath();
+        ctx.moveTo(px - r * 0.45, py - r * 0.3);
+        ctx.lineTo(px + r * 0.45, py - r * 0.3);
+        ctx.quadraticCurveTo(px + r * 0.95, py + r * 0.6, px + r * 1.15, py + r * 1.4);
+        ctx.lineTo(px - r * 1.15, py + r * 1.4);
+        ctx.quadraticCurveTo(px - r * 0.95, py + r * 0.6, px - r * 0.45, py - r * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        // 兜帽
+        ctx.fillStyle = tint.hood;
+        ctx.beginPath();
+        ctx.moveTo(px, py - r * 1.4);
+        ctx.quadraticCurveTo(px + r * 0.55, py - r * 0.9, px + r * 0.75, py - r * 0.3);
+        ctx.quadraticCurveTo(px + r * 0.3, py - r * 0.05, px, py);
+        ctx.quadraticCurveTo(px - r * 0.3, py - r * 0.05, px - r * 0.75, py - r * 0.3);
+        ctx.quadraticCurveTo(px - r * 0.55, py - r * 0.9, px, py - r * 1.4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#08020a';
+        ctx.beginPath();
+        ctx.ellipse(px, py - r * 0.55, r * 0.42, r * 0.48, 0, 0, TWO_PI);
+        ctx.fill();
+        // 眼睛
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = tint.eyeGlow;
+        ctx.globalAlpha = 0.35;
+        ctx.beginPath();
+        ctx.arc(px - r * 0.2, py - r * 0.6, r * 0.16, 0, TWO_PI);
+        ctx.arc(px + r * 0.2, py - r * 0.6, r * 0.16, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = tint.eye;
+        ctx.beginPath();
+        ctx.arc(px - r * 0.2, py - r * 0.6, r * 0.07, 0, TWO_PI);
+        ctx.arc(px + r * 0.2, py - r * 0.6, r * 0.07, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        // 受傷閃白
+        if (p.hitFlash > 0) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = 'rgba(255, 150, 150, ' + (p.hitFlash * 0.7) + ')';
+            ctx.beginPath();
+            ctx.arc(px, py, r * 1.1, 0, TWO_PI);
+            ctx.fill();
+        }
+        // HP 條 (頭頂)
+        ctx.globalCompositeOperation = 'source-over';
+        const barW = 70, barH = 6;
+        const barX = px - barW / 2;
+        const barY = py - r * 1.55;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(barX, barY, barW, barH);
+        const pct = Math.max(0, p.hp / p.maxHp);
+        ctx.fillStyle = isEnemy ? '#ff6688' : '#66ff88';
+        ctx.fillRect(barX, barY, barW * pct, barH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barW, barH);
+        // Slot label
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px Georgia';
+        ctx.textAlign = 'center';
+        ctx.fillText(isEnemy ? '敵 Slot' + p.slot : '友 Slot' + p.slot, px, barY - 3);
+        ctx.restore();
+    }
+
+    // 對手被擊中動畫推進 (供 updatePvp 用)
+    function updatePlayersAnim(dt) {
+        for (const s in game.mp.players) {
+            const p = game.mp.players[s];
+            p.bobPhase = (p.bobPhase || 0) + dt * 2;
+            p.hitFlash = Math.max(0, (p.hitFlash || 0) - dt * 2);
+        }
     }
 
     function renderMpHpBars(ctx, w) {
@@ -3002,10 +3362,21 @@
                 openLoadout(() => startInfinite());
                 break;
             case 'multiplayer':
+                window.UI.showScreen('mp-mode-select');
+                break;
+            case 'mp-mode-1v1':
+                game.mp.teamMode = '1v1';
+                openMpLobby();
+                break;
+            case 'mp-mode-2v2':
+                game.mp.teamMode = '2v2';
                 openMpLobby();
                 break;
             case 'mp-leave':
                 leaveMp();
+                break;
+            case 'mp-rematch':
+                rematchMp();
                 break;
             case 'skills':
                 openSkills();

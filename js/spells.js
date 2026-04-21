@@ -167,6 +167,25 @@
         }
     };
 
+    // PvP 傷害倍率 (平衡對戰, 避免秒殺)
+    const PVP_DAMAGE_MUL = {
+        fireball:   0.50,
+        lightning:  0.35,    // 秒殺元兇, 重砍
+        icespike:   0.60,
+        meteor:     0.35,    // 巨傷重砍
+        wind:       0.50,
+        poison:     0.55,
+        holynova:   0.40,
+        slash:      0.45,
+        groundslam: 0.45,
+        blooddrain: 0.50,
+        heal:       1.0,     // 治療量不調
+        _default:   0.55
+    };
+    function pvpMul(kind) {
+        return PVP_DAMAGE_MUL[kind] !== undefined ? PVP_DAMAGE_MUL[kind] : PVP_DAMAGE_MUL._default;
+    }
+
     // ==== 鎖定加成 — 依符文等級 (1-5) 計算 ====
     // 等級 1: 基礎 / 每級 +20% 傷害, -7% 冷卻
     function getScaledDamage(kind, baseDamage, level) {
@@ -657,6 +676,7 @@
         getScaledDamage,
         getScaledCooldown,
         getScaledHeal,
+        pvpMul,
         clearAll,
         clearProjectiles
     };
