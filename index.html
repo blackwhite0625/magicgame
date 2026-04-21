@@ -32,6 +32,17 @@
             <div class="menu-hint">拖曳滑鼠 / 觸控板繪製符文 · WASD 移動 · Esc 暫停</div>
         </div>
 
+        <!-- 多人遊戲: 名稱輸入 -->
+        <div id="mp-name-screen" class="screen">
+            <h2 class="screen-title">輸入你的名稱</h2>
+            <div class="mp-name-form">
+                <p class="mp-name-hint">這個名稱會顯示給隊友與對手</p>
+                <input id="mp-name-input" type="text" maxlength="12" placeholder="你的名稱" autocomplete="off">
+                <button class="menu-btn" id="mp-name-confirm">確認</button>
+            </div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
+        </div>
+
         <!-- 多人遊戲: 模式選擇 -->
         <div id="mp-mode-select" class="screen">
             <h2 class="screen-title">多人遊戲</h2>
@@ -73,21 +84,22 @@
 
         <!-- 房間等待 / 房主設定 -->
         <div id="mp-room" class="screen">
-            <h2 class="screen-title">等待對手</h2>
+            <h2 class="screen-title" id="mp-room-title">等待對手</h2>
             <div class="mp-room-code">
                 <div class="mp-code-label">房間代碼</div>
                 <div class="mp-code-big" id="mp-code-display">------</div>
                 <div class="mp-code-hint">把這組代碼傳給對手</div>
             </div>
-            <div class="mp-room-players">
-                <div class="mp-player-slot" id="mp-me-slot">
-                    <div class="mp-slot-label">你 (房主)</div>
-                    <div class="mp-slot-status">✓ 就緒</div>
+            <!-- 動態玩家容器 (1v1 兩格, 2v2 四格) -->
+            <div class="mp-teams-container" id="mp-teams-container">
+                <div class="mp-team-col" id="mp-team-0">
+                    <div class="mp-team-label blue">藍隊</div>
+                    <div class="mp-team-slots" id="mp-team-0-slots"></div>
                 </div>
                 <div class="mp-vs">VS</div>
-                <div class="mp-player-slot" id="mp-opp-slot">
-                    <div class="mp-slot-label">對手</div>
-                    <div class="mp-slot-status">等待中...</div>
+                <div class="mp-team-col" id="mp-team-1">
+                    <div class="mp-team-label red">紅隊</div>
+                    <div class="mp-team-slots" id="mp-team-1-slots"></div>
                 </div>
             </div>
             <div id="mp-host-config" class="mp-config hidden">

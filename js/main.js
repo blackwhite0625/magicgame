@@ -75,6 +75,7 @@
             active: false,
             isHost: false,
             teamMode: '1v1',      // '1v1' | '2v2'
+            myName: 'Player',      // 玩家名稱 (可在進入多人前自訂)
             myTeam: 0,             // 我方隊伍 (0 or 1)
             mySlot: 0,             // 在房間內的 slot (0~3)
             mapId: 'grassland',
@@ -147,6 +148,10 @@
         }
     } catch (e) {}
     if (!game.pvpLoadout.length) game.pvpLoadout = ['fireball'];
+    try {
+        const nm = localStorage.getItem('magicRunes.mpName');
+        if (nm) game.mp.myName = nm.slice(0, 12);
+    } catch (e) {}
     // 確保 loadout 至少有火球
     if (!game.loadout.length) game.loadout = ['fireball'];
 
@@ -1353,11 +1358,11 @@
                 for (let s = 1; s <= 3; s++) {
                     if (!usedSlots.has(s)) { assignSlot = s; break; }
                 }
-                if (assignSlot === -1) return; // 房間滿了 (理論上不該觸發, multiplayer.js 已擋)
-                // 2v2 隊伍分配: 0&2 vs 1&3
+                if (assignSlot === -1) return;
+                // 2v2 預設: 0&2 vs 1&3 (房主可以之後按鈕換)
                 const team = assignSlot % 2;
                 game.mp.players[assignSlot] = {
-                    slot: assignSlot, team: team,
+                    slot: assignSlot, team: team, name: 'P' + assignSlot,
                     x: 0, y: 0, hp: 100, maxHp: 100,
                     alive: true, hitFlash: 0, bobPhase: Math.random() * Math.PI * 2,
                     connId: conn && conn.peer ? conn.peer : null
@@ -1417,21 +1422,19 @@
     function hostRoom() {
         setupMpHandlers();
         const capacity = game.mp.teamMode === '2v2' ? 4 : 2;
-        // 房主固定 slot 0 team 0
+        game.mp.isHost = true;
         game.mp.mySlot = 0;
         game.mp.myTeam = 0;
         game.mp.players = {};
         window.Multiplayer.host((code) => {
             window.UI.showScreen('mp-room');
             document.getElementById('mp-code-display').textContent = code;
+            document.getElementById('mp-room-title').textContent = game.mp.teamMode === '2v2' ? '等待 3 位對手 (2v2)' : '等待對手 (1v1)';
             document.getElementById('mp-host-config').classList.remove('hidden');
             document.getElementById('mp-start-btn').disabled = true;
             const needed = capacity - 1;
             document.getElementById('mp-start-btn').textContent = `等待 ${needed} 位對手...`;
-            document.getElementById('mp-opp-slot').querySelector('.mp-slot-status').textContent = '等待中...';
-            // 顯示模式
-            const modeLbl = document.getElementById('mp-room-mode');
-            if (modeLbl) modeLbl.textContent = game.mp.teamMode.toUpperCase();
+            renderRoomSlots();
         }, (err) => showMpStatus('無法開房: ' + err, true), capacity);
     }
 
@@ -1441,6 +1444,8 @@
             return;
         }
         setupMpHandlers();
+        game.mp.isHost = false;
+        game.mp.players = {};
         showMpStatus('連線中...', false);
         window.Multiplayer.join(code, (err) => showMpStatus('加入失敗: ' + err, true));
     }
@@ -1476,11 +1481,22 @@
     }
 
     function broadcastLobby() {
-        // 房主把當前玩家 slot 資料廣播給所有訪客 (讓他們知道隊友/對手)
+        // 包含房主 (slot 0) + 所有訪客, 帶上名稱與隊伍
         const players = {};
+        players[0] = {
+            slot: 0,
+            team: game.mp.myTeam,
+            name: game.mp.myName,
+            isHost: true
+        };
         for (const s in game.mp.players) {
             const p = game.mp.players[s];
-            players[s] = { slot: p.slot, team: p.team };
+            players[s] = {
+                slot: p.slot,
+                team: p.team,
+                name: p.name || ('P' + s),
+                isHost: false
+            };
         }
         window.Multiplayer.send({
             type: 'lobby',
@@ -1491,20 +1507,113 @@
     }
 
     function updateRoomUI() {
-        // 依連線數更新房主啟動按鈕
-        if (!window.Multiplayer.isHost()) return;
-        const needed = (game.mp.teamMode === '2v2' ? 4 : 2) - 1;
-        const have = window.Multiplayer.connectionCount();
-        const btn = document.getElementById('mp-start-btn');
-        if (have >= needed) {
-            btn.disabled = false;
-            btn.textContent = '開始對戰';
-        } else {
-            btn.disabled = true;
-            btn.textContent = `等待 ${needed - have} 位對手...`;
+        if (window.Multiplayer.isHost()) {
+            const needed = (game.mp.teamMode === '2v2' ? 4 : 2) - 1;
+            const have = window.Multiplayer.connectionCount();
+            const btn = document.getElementById('mp-start-btn');
+            if (btn) {
+                if (have >= needed) {
+                    btn.disabled = false;
+                    btn.textContent = '開始對戰';
+                } else {
+                    btn.disabled = true;
+                    btn.textContent = `等待 ${needed - have} 位對手...`;
+                }
+            }
         }
-        const oppSlot = document.getElementById('mp-opp-slot');
-        if (oppSlot) oppSlot.querySelector('.mp-slot-status').textContent = have > 0 ? `${have} / ${needed} 已連線` : '等待中...';
+        renderRoomSlots();
+    }
+
+    // 渲染房間內所有 slot (藍/紅 兩隊分欄)
+    function renderRoomSlots() {
+        const mp = game.mp;
+        const is2v2 = mp.teamMode === '2v2';
+        const blueDiv = document.getElementById('mp-team-0-slots');
+        const redDiv = document.getElementById('mp-team-1-slots');
+        if (!blueDiv || !redDiv) return;
+        blueDiv.innerHTML = '';
+        redDiv.innerHTML = '';
+
+        // 組合全部 slot (含自己)
+        const allSlots = {};
+        allSlots[mp.mySlot] = {
+            slot: mp.mySlot,
+            team: mp.myTeam,
+            name: mp.myName + ' (你)',
+            isHost: mp.isHost || window.Multiplayer.isHost(),
+            connected: true,
+            isSelf: true
+        };
+        for (const s in mp.players) {
+            const p = mp.players[s];
+            allSlots[s] = {
+                slot: p.slot,
+                team: p.team,
+                name: p.name || ('訪客 ' + s),
+                isHost: !!p.isHost,
+                connected: true,
+                isSelf: false
+            };
+        }
+
+        // 空 slot (尚未加入)
+        const capacity = is2v2 ? 4 : 2;
+        for (let s = 0; s < capacity; s++) {
+            if (!allSlots[s]) {
+                // 預測隊伍 (依 slot 奇偶)
+                allSlots[s] = {
+                    slot: s, team: s % 2,
+                    name: '(空位)', isHost: false,
+                    connected: false, isSelf: false
+                };
+            }
+        }
+
+        // 分類繪製
+        for (const sKey in allSlots) {
+            const s = allSlots[sKey];
+            const card = document.createElement('div');
+            card.className = 'mp-player-card' +
+                (s.connected ? '' : ' empty') +
+                (s.isSelf ? ' self' : '');
+            card.innerHTML = `
+                <div class="mp-card-slot">Slot ${s.slot}${s.isHost ? ' · 房主' : ''}</div>
+                <div class="mp-card-name">${s.name}</div>
+                <div class="mp-card-status">${s.connected ? '✓ 就緒' : '等待中'}</div>
+            `;
+            // 房主可按 slot 來交換隊伍 (只對已連線的, 不是空位)
+            if (is2v2 && window.Multiplayer.isHost() && s.connected) {
+                const btn = document.createElement('button');
+                btn.className = 'mp-team-swap-btn';
+                btn.textContent = '切換隊伍';
+                btn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    hostSwapTeam(s.slot);
+                });
+                card.appendChild(btn);
+            }
+            (s.team === 0 ? blueDiv : redDiv).appendChild(card);
+        }
+    }
+
+    // 房主: 把某 slot 換到另一隊
+    function hostSwapTeam(slot) {
+        const mp = game.mp;
+        if (!window.Multiplayer.isHost()) return;
+        let newTeam;
+        if (slot === mp.mySlot) {
+            mp.myTeam = 1 - mp.myTeam;
+            newTeam = mp.myTeam;
+        } else if (mp.players[slot]) {
+            mp.players[slot].team = 1 - mp.players[slot].team;
+            newTeam = mp.players[slot].team;
+        } else return;
+        // 通知所有人
+        window.Multiplayer.send({ type: 'teamSwap', slot: slot, team: newTeam });
+        // 同時 broadcast lobby 確保同步
+        broadcastLobby();
+        renderRoomSlots();
+        window.UI.playSfx('ui');
     }
 
     function handleMpData(data) {
@@ -1523,22 +1632,52 @@
                 mp.teamMode = data.teamMode || '1v1';
                 mp.mapId = data.mapId || mp.mapId;
                 mp.rounds = data.rounds || mp.rounds;
-                document.getElementById('mp-opp-slot').querySelector('.mp-slot-status').textContent =
-                    `房主: ${mp.teamMode.toUpperCase()} 模式 / Slot ${data.slot} (隊伍 ${data.team + 1})`;
+                // 回覆房主自己的名稱 (附上 slot 以便比對)
+                window.Multiplayer.send({ type: 'hello', name: game.mp.myName, slot: mp.mySlot });
+                renderRoomSlots();
                 break;
             case 'lobby':
-                // 訪客收到當前 lobby 組成
+                // 訪客收到完整 lobby 組成 (包含房主 slot 0)
                 mp.teamMode = data.teamMode || mp.teamMode;
                 mp.players = {};
                 for (const s in data.players) {
                     const src = data.players[s];
-                    if (parseInt(s, 10) === mp.mySlot) continue;   // 自己不放進去
-                    mp.players[s] = {
-                        slot: src.slot, team: src.team,
+                    const slotNum = parseInt(s, 10);
+                    if (slotNum === mp.mySlot) {
+                        // 自己的隊伍可能被房主改過
+                        mp.myTeam = src.team;
+                        continue;
+                    }
+                    mp.players[slotNum] = {
+                        slot: src.slot,
+                        team: src.team,
+                        name: src.name || ('P' + slotNum),
+                        isHost: !!src.isHost,
                         x: 0, y: 0, hp: 100, maxHp: 100,
                         alive: true, hitFlash: 0, bobPhase: 0
                     };
                 }
+                renderRoomSlots();
+                break;
+            case 'hello':
+                // 訪客連線後送上名稱與自己的 slot; 房主更新並廣播
+                if (game.mp.isHost && data.name && data.slot !== undefined) {
+                    if (game.mp.players[data.slot]) {
+                        game.mp.players[data.slot].name = String(data.name).slice(0, 12);
+                        broadcastLobby();
+                        renderRoomSlots();
+                    }
+                }
+                break;
+            case 'teamSwap':
+                // 房主改變某 slot 的隊伍
+                if (data.slot === mp.mySlot) {
+                    mp.myTeam = data.team;
+                }
+                if (mp.players[data.slot]) {
+                    mp.players[data.slot].team = data.team;
+                }
+                renderRoomSlots();
                 break;
             case 'start':
                 mp.mapId = data.mapId || mp.mapId;
@@ -1546,13 +1685,13 @@
                 beginMpMatch(false);
                 break;
             case 'state':
-                // 2v2: 根據 slot 更新; 1v1: 更新 opponent
                 if (data.slot !== undefined && mp.teamMode === '2v2') {
                     const p = mp.players[data.slot];
                     if (p) {
                         p.x = data.x; p.y = data.y;
                         p.hp = data.hp; p.maxHp = data.maxHp;
                         p.alive = data.hp > 0;
+                        if (data.name) p.name = data.name;
                     }
                 } else {
                     mp.opponent.x = data.x;
@@ -1560,6 +1699,7 @@
                     mp.opponent.hp = data.hp;
                     mp.opponent.maxHp = data.maxHp;
                     mp.opponent.alive = data.hp > 0;
+                    if (data.name) mp.opponent.name = data.name;
                     mp.opponent.lastUpdate = performance.now();
                 }
                 break;
@@ -2407,6 +2547,18 @@
         ctx.closePath();
         ctx.fill();
 
+        // PvP 模式下顯示自己名稱
+        if (game.state === 'pvp' && game.mp.myName) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = '#aaffdd';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 14px Georgia';
+            ctx.textAlign = 'center';
+            ctx.strokeText('♦ ' + game.mp.myName, px, py - r * 1.55);
+            ctx.fillText('♦ ' + game.mp.myName, px, py - r * 1.55);
+        }
+
         // 受傷閃白
         if (p.hitFlash > 0) {
             ctx.globalCompositeOperation = 'lighter';
@@ -2584,13 +2736,14 @@
 
         window.Particles.update(dt);
 
-        // 送自身狀態 (~20hz) — 2v2 需附 slot
+        // 送自身狀態 (~20hz) — 2v2 需附 slot 和 name
         mp.sendTimer += dt;
         if (mp.sendTimer > 0.05) {
             mp.sendTimer = 0;
             window.Multiplayer.send({
                 type: 'state',
                 slot: mp.mySlot,
+                name: mp.myName,
                 x: game.player.x, y: game.player.y,
                 hp: game.player.hp, maxHp: game.player.maxHp
             });
@@ -2849,6 +3002,17 @@
             ctx.arc(px, py, r * 1.1, 0, TWO_PI);
             ctx.fill();
         }
+        ctx.globalCompositeOperation = 'source-over';
+        // 名稱
+        if (o.name) {
+            ctx.fillStyle = '#ffbbbb';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 14px Georgia';
+            ctx.textAlign = 'center';
+            ctx.strokeText('⚔ ' + o.name, px, py - r * 1.55);
+            ctx.fillText('⚔ ' + o.name, px, py - r * 1.55);
+        }
         ctx.restore();
     }
 
@@ -2943,11 +3107,15 @@
         ctx.strokeStyle = 'rgba(255,255,255,0.5)';
         ctx.lineWidth = 1;
         ctx.strokeRect(barX, barY, barW, barH);
-        // Slot label
+        // 名稱 + 敵友標記
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 11px Georgia';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.font = 'bold 13px Georgia';
         ctx.textAlign = 'center';
-        ctx.fillText(isEnemy ? '敵 Slot' + p.slot : '友 Slot' + p.slot, px, barY - 3);
+        const label = (isEnemy ? '⚔ ' : '♦ ') + (p.name || ('Slot' + p.slot));
+        ctx.strokeText(label, px, barY - 4);
+        ctx.fillText(label, px, barY - 4);
         ctx.restore();
     }
 
@@ -3215,6 +3383,28 @@
             });
         });
 
+        // 名稱確認 (Enter 或點按鈕)
+        const nameInput = document.getElementById('mp-name-input');
+        const nameConfirm = document.getElementById('mp-name-confirm');
+        const confirmName = () => {
+            const v = (nameInput.value || '').trim().slice(0, 12);
+            if (!v) {
+                window.UI.playSfx('fail');
+                nameInput.focus();
+                return;
+            }
+            game.mp.myName = v;
+            try { localStorage.setItem('magicRunes.mpName', v); } catch (e) {}
+            window.UI.playSfx('ui');
+            window.UI.showScreen('mp-mode-select');
+        };
+        if (nameConfirm) nameConfirm.addEventListener('click', confirmName);
+        if (nameInput) {
+            nameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') confirmName();
+            });
+        }
+
         // 多人連線按鈕
         const hostBtn = document.getElementById('mp-host-btn');
         if (hostBtn) {
@@ -3362,7 +3552,10 @@
                 openLoadout(() => startInfinite());
                 break;
             case 'multiplayer':
-                window.UI.showScreen('mp-mode-select');
+                // 先輸入名稱再選模式
+                document.getElementById('mp-name-input').value = game.mp.myName === 'Player' ? '' : game.mp.myName;
+                window.UI.showScreen('mp-name-screen');
+                setTimeout(() => document.getElementById('mp-name-input').focus(), 50);
                 break;
             case 'mp-mode-1v1':
                 game.mp.teamMode = '1v1';
