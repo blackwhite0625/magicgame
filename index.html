@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="魔法符文對戰 — 繪製符文施放魔法的網頁遊戲 (Mac / Windows 皆可遊玩)">
+    <meta name="theme-color" content="#4422aa">
+    <title>魔法符文對戰 · Magic Runes</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="alternate icon" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- 主選單 -->
+        <div id="main-menu" class="screen active">
+            <div class="menu-bg-runes"></div>
+            <h1 class="game-title">
+                <span class="title-magic">魔法</span><span class="title-rune">符文</span>
+                <div class="title-sub">MAGIC RUNES</div>
+            </h1>
+            <div class="menu-buttons">
+                <button class="menu-btn" data-action="start">開始冒險</button>
+                <button class="menu-btn" data-action="infinite">無限模式</button>
+                <button class="menu-btn" data-action="multiplayer">1v1 連線</button>
+                <button class="menu-btn" data-action="skills">技能</button>
+                <button class="menu-btn" data-action="shop">商城</button>
+                <button class="menu-btn" data-action="practice">符文練習</button>
+                <button class="menu-btn" data-action="codex">符文圖鑑</button>
+                <button class="menu-btn" data-action="settings">設定</button>
+            </div>
+            <div class="menu-hint">拖曳滑鼠 / 觸控板繪製符文 · WASD 移動 · Esc 暫停</div>
+        </div>
+
+        <!-- 多人連線 Lobby -->
+        <div id="mp-lobby" class="screen">
+            <h2 class="screen-title">1v1 連線對戰</h2>
+            <div class="mp-lobby-content">
+                <div class="mp-col">
+                    <h3>創建房間</h3>
+                    <p class="mp-help">開房後會產生 6 碼房間代碼, 分享給對手</p>
+                    <button class="menu-btn" id="mp-host-btn">創建房間</button>
+                </div>
+                <div class="mp-divider">或</div>
+                <div class="mp-col">
+                    <h3>加入房間</h3>
+                    <p class="mp-help">輸入對方提供的 6 碼代碼</p>
+                    <input id="mp-code-input" type="text" maxlength="6" placeholder="代碼" />
+                    <button class="menu-btn" id="mp-join-btn">加入</button>
+                </div>
+            </div>
+            <div id="mp-status" class="mp-status hidden"></div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
+        </div>
+
+        <!-- 房間等待 / 房主設定 -->
+        <div id="mp-room" class="screen">
+            <h2 class="screen-title">等待對手</h2>
+            <div class="mp-room-code">
+                <div class="mp-code-label">房間代碼</div>
+                <div class="mp-code-big" id="mp-code-display">------</div>
+                <div class="mp-code-hint">把這組代碼傳給對手</div>
+            </div>
+            <div class="mp-room-players">
+                <div class="mp-player-slot" id="mp-me-slot">
+                    <div class="mp-slot-label">你 (房主)</div>
+                    <div class="mp-slot-status">✓ 就緒</div>
+                </div>
+                <div class="mp-vs">VS</div>
+                <div class="mp-player-slot" id="mp-opp-slot">
+                    <div class="mp-slot-label">對手</div>
+                    <div class="mp-slot-status">等待中...</div>
+                </div>
+            </div>
+            <div id="mp-host-config" class="mp-config hidden">
+                <label class="setting-row">
+                    <span>對戰回合 (BO)</span>
+                    <select id="mp-rounds-select">
+                        <option value="1">1 回合 (BO1)</option>
+                        <option value="3" selected>3 回合 (BO3)</option>
+                        <option value="5">5 回合 (BO5)</option>
+                        <option value="7">7 回合 (BO7)</option>
+                    </select>
+                </label>
+                <label class="setting-row">
+                    <span>對戰地圖</span>
+                    <select id="mp-map-select">
+                        <option value="grassland">翠綠草原</option>
+                        <option value="swamp">暗影沼澤</option>
+                        <option value="volcano">熔焰火山</option>
+                    </select>
+                </label>
+                <button class="menu-btn" id="mp-start-btn" disabled>等待對手...</button>
+            </div>
+            <div class="mp-loadout-area">
+                <button class="menu-btn" id="mp-edit-loadout">編輯出戰符文 (任選 5 個 · 全部 Lv.1)</button>
+            </div>
+            <button class="back-btn" data-action="mp-leave">離開房間</button>
+        </div>
+
+        <!-- 多人對戰結果 -->
+        <div id="mp-result" class="modal hidden">
+            <div class="modal-content">
+                <h2 id="mp-result-title">勝利！</h2>
+                <div id="mp-result-stats"></div>
+                <button class="menu-btn" data-action="mp-leave">離開房間</button>
+            </div>
+        </div>
+
+        <!-- 技能管理 -->
+        <div id="skills-screen" class="screen">
+            <h2 class="screen-title">技能管理</h2>
+            <div class="skills-header">
+                <div class="skills-pts">可用技能點: <span id="skills-available">0</span>  ·  累計: <span id="skills-earned">0</span></div>
+                <button class="menu-btn small" id="skills-reset">重置所有等級 (退還點數)</button>
+            </div>
+            <div id="skills-grid" class="skills-grid"></div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
+        </div>
+
+        <!-- 商城 -->
+        <div id="shop-screen" class="screen">
+            <h2 class="screen-title">符文商城</h2>
+            <div id="shop-gold" class="shop-gold">金幣: <span id="shop-gold-amount">0</span> 🪙</div>
+            <div id="shop-sections">
+                <div class="shop-section">
+                    <h3>近戰符文 (解鎖後可使用)</h3>
+                    <div id="shop-spells" class="shop-grid"></div>
+                </div>
+                <div class="shop-section">
+                    <h3>永久強化</h3>
+                    <div id="shop-upgrades" class="shop-grid"></div>
+                </div>
+            </div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
+        </div>
+
+        <!-- 符文圖鑑 -->
+        <div id="codex-screen" class="screen">
+            <h2 class="screen-title">符文圖鑑</h2>
+            <div id="codex-grid" class="codex-grid"></div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
+        </div>
+
+        <!-- 設定畫面 -->
+        <div id="settings-screen" class="screen">
+            <h2 class="screen-title">設定</h2>
+            <div class="settings-list">
+                <label class="setting-row">
+                    <span>音效音量</span>
+                    <input type="range" id="sfx-volume" min="0" max="100" value="70">
+                </label>
+                <label class="setting-row">
+                    <span>背景音樂</span>
+                    <input type="range" id="bgm-volume" min="0" max="100" value="50">
+                </label>
+                <label class="setting-row">
+                    <span>識別難度</span>
+                    <select id="recognition-threshold">
+                        <option value="0.4">輔助 (最寬鬆)</option>
+                        <option value="0.55" selected>簡單</option>
+                        <option value="0.7">普通</option>
+                        <option value="0.82">困難</option>
+                    </select>
+                </label>
+                <label class="setting-row">
+                    <span>顯示繪製指引</span>
+                    <input type="checkbox" id="show-guide" checked>
+                </label>
+            </div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
+        </div>
+
+        <!-- 出戰選擇 (5 符文) -->
+        <div id="loadout-screen" class="screen">
+            <h2 class="screen-title">選擇出戰符文</h2>
+            <div class="loadout-hint">選擇最多 5 個符文攜帶入戰 (點擊符文來切換是否裝備)</div>
+            <div id="loadout-slots" class="loadout-slots"></div>
+            <div id="loadout-pool" class="loadout-pool"></div>
+            <div class="loadout-actions">
+                <button class="back-btn" data-action="back-to-menu">返回</button>
+                <button class="menu-btn" id="loadout-confirm">確認出戰</button>
+            </div>
+        </div>
+
+        <!-- 關卡選擇 -->
+        <div id="level-select" class="screen">
+            <h2 class="screen-title">選擇關卡</h2>
+            <div id="level-grid" class="level-grid"></div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
+        </div>
+
+        <!-- 遊戲畫面 -->
+        <div id="game-screen" class="screen">
+            <canvas id="game-canvas"></canvas>
+
+            <!-- 玩家 HUD -->
+            <div id="player-hud" class="hud">
+                <div class="bar-group">
+                    <div class="bar-label">HP</div>
+                    <div class="bar-container">
+                        <div id="hp-bar" class="bar hp-bar"></div>
+                        <span id="hp-text" class="bar-text">100/100</span>
+                    </div>
+                </div>
+                <div class="bar-group">
+                    <div class="bar-label">MP</div>
+                    <div class="bar-container">
+                        <div id="mp-bar" class="bar mp-bar"></div>
+                        <span id="mp-text" class="bar-text">100/100</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 關卡/分數資訊 -->
+            <div id="game-info" class="hud">
+                <div id="level-display">第 1 關</div>
+                <div id="score-display">分數: 0</div>
+                <div id="gold-display">🪙 <span id="gold-amount">0</span></div>
+                <div id="wave-display" class="hidden">波次: 1</div>
+                <div id="highscore-display" class="hidden">最高: 0</div>
+                <div id="combo-display" class="hidden">連擊 x<span id="combo-count">1</span></div>
+                <div id="buffs-display" class="buffs-display"></div>
+            </div>
+
+            <!-- 冷卻指示器 -->
+            <div id="cooldowns" class="hud"></div>
+
+            <!-- 繪製提示 -->
+            <div id="draw-hint" class="draw-hint hidden">在下方區域繪製符文</div>
+
+            <!-- 暫停按鈕 -->
+            <button id="pause-btn" class="corner-btn">❚❚</button>
+
+            <!-- 識別結果顯示 -->
+            <div id="recognition-display" class="hidden"></div>
+        </div>
+
+        <!-- 練習模式 -->
+        <div id="practice-screen" class="screen">
+            <canvas id="practice-canvas"></canvas>
+            <div id="practice-hud" class="hud">
+                <div id="practice-target">目標: <span id="target-rune">火球</span></div>
+                <div id="practice-score">準確度: <span id="practice-accuracy">--</span></div>
+                <div class="practice-tip">畫完會顯示你的軌跡，依顏色判斷準確度</div>
+            </div>
+            <div id="practice-controls">
+                <button class="practice-btn" data-rune="fireball">火球</button>
+                <button class="practice-btn" data-rune="lightning">閃電</button>
+                <button class="practice-btn" data-rune="icespike">冰刺</button>
+                <button class="practice-btn" data-rune="heal">治療</button>
+                <button class="practice-btn" data-rune="shield">護盾</button>
+                <button class="practice-btn" data-rune="meteor">隕石</button>
+                <button class="practice-btn" data-rune="wind">風刃</button>
+                <button class="practice-btn" data-rune="poison">毒霧</button>
+                <button class="practice-btn" data-rune="teleport">閃現</button>
+                <button class="practice-btn" data-rune="holynova">聖光爆</button>
+                <button class="practice-btn" data-rune="slash">利刃斬</button>
+                <button class="practice-btn" data-rune="groundslam">大地轟擊</button>
+                <button class="practice-btn" data-rune="blooddrain">吸血之觸</button>
+            </div>
+            <button class="back-btn" data-action="back-to-menu">返回</button>
+        </div>
+
+        <!-- 操作提示 (遊戲中左下角) -->
+        <div id="controls-hint" class="hud hidden">
+            <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移動</div>
+            <div>滑鼠 / 觸控板 按住拖曳繪製符文</div>
+            <div><kbd>Esc</kbd> 暫停</div>
+        </div>
+
+        <!-- 暫停選單 -->
+        <div id="pause-menu" class="modal hidden">
+            <div class="modal-content">
+                <h2>暫停</h2>
+                <button class="menu-btn" data-action="resume">繼續</button>
+                <button class="menu-btn" data-action="restart">重新開始</button>
+                <button class="menu-btn" data-action="quit">返回主選單</button>
+            </div>
+        </div>
+
+        <!-- 勝利/失敗畫面 -->
+        <div id="result-screen" class="modal hidden">
+            <div class="modal-content">
+                <h2 id="result-title">勝利！</h2>
+                <div id="result-stats"></div>
+                <button class="menu-btn" data-action="next-level">下一關</button>
+                <button class="menu-btn" data-action="restart">再玩一次</button>
+                <button class="menu-btn" data-action="quit">返回主選單</button>
+            </div>
+        </div>
+
+        <!-- 升級符文畫面 -->
+        <div id="upgrade-screen" class="modal hidden">
+            <div class="modal-content upgrade-content">
+                <h2>選擇要升級的符文</h2>
+                <div class="upgrade-hint">點擊一個符文 +1 等級 (上限 5)</div>
+                <div id="upgrade-grid" class="upgrade-grid"></div>
+                <button class="menu-btn" id="upgrade-skip">略過</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PeerJS (WebRTC P2P 信令) 用於多人連線; 僅在使用多人時才會真正建立連線 -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="js/particles.js"></script>
+    <script src="js/recognizer.js"></script>
+    <script src="js/spells.js"></script>
+    <script src="js/enemies.js"></script>
+    <script src="js/maps.js"></script>
+    <script src="js/multiplayer.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
