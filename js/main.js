@@ -878,40 +878,61 @@
         targetCtx.restore();
     }
 
-    // 在 pvp 模式中, 也可以施法 (處理同 game state)
+    // PvP 施法流程
     function processGameSpell(trail) {
         const isPvp = game.state === 'pvp' && game.mp.active && game.mp.roundState === 'playing';
         if (isPvp) {
-            // 把對手當作單一敵人, 並記錄初始 HP 以計算瞬發傷害 (閃電/聖光爆/大地等)
-            const tempOpp = mpOpponentAsEnemy();
-            const beforeHp = tempOpp.hp;
+            const is2v2 = game.mp.teamMode === '2v2';
+            // 2v2: 只把「敵隊」放進 enemies 列表, 確保 findNearestEnemy + AOE 都不會攻擊隊友
+            const enemyList = is2v2 ? getEnemyTargets() : [mpOpponentAsEnemy()];
+            // 記錄每個敵人當前 HP, 施法後計算差值送 hit (單體/AOE 皆適用)
+            const snapshot = enemyList.map(e => ({
+                slot: e._slot,
+                hpBefore: e.hp,
+                ref: e
+            }));
             const orig = game.enemies;
-            game.enemies = [tempOpp];
+            game.enemies = enemyList;
+
             _processGameSpellInner(trail, (name, critical) => {
+                // 找最近敵人決定施法視覺目標 (ntx/nty)
+                let nearest = null, nd = Infinity;
+                for (let i = 0; i < enemyList.length; i++) {
+                    const e = enemyList[i];
+                    const dx = e.x - game.player.x, dy = e.y - game.player.y;
+                    const d = dx * dx + dy * dy;
+                    if (d < nd) { nd = d; nearest = e; }
+                }
+                const tx = nearest ? nearest.x : game.player.x + 400;
+                const ty = nearest ? nearest.y : game.player.y;
                 window.Multiplayer.send({
                     type: 'cast',
                     spell: name,
-                    slot: game.mp.mySlot,    // 2v2 追蹤誰施法
+                    slot: game.mp.mySlot,
                     nx: game.player.x / cachedSize.w,
                     ny: game.player.y / cachedSize.h,
-                    ntx: game.mp.opponent.x / cachedSize.w,
-                    nty: game.mp.opponent.y / cachedSize.h,
+                    ntx: tx / cachedSize.w,
+                    nty: ty / cachedSize.h,
                     critical: critical
                 });
             });
+
             game.enemies = orig;
-            // 若 castSpell 對 tempOpp 造成瞬發傷害, 同步給對方 + 更新本端對手 HP
-            const dmgDone = beforeHp - tempOpp.hp;
-            if (dmgDone > 0) {
-                window.Multiplayer.send({
-                    type: 'hit',
-                    damage: dmgDone,
-                    spell: 'aoe'
-                });
-                game.mp.opponent.hp = Math.max(0, game.mp.opponent.hp - dmgDone);
-                game.mp.opponent.hitFlash = 1;
-                if (game.mp.opponent.hp <= 0 && game.mp.roundState === 'playing') {
-                    localRoundDecided(true);
+
+            // 對每個受傷的敵人分別發送 hit (2v2 依 slot, 1v1 不附 slot)
+            for (let i = 0; i < enemyList.length; i++) {
+                const snap = snapshot[i];
+                const dmg = snap.hpBefore - snap.ref.hp;
+                if (dmg > 0) {
+                    window.Multiplayer.send({
+                        type: 'hit',
+                        damage: dmg,
+                        spell: 'aoe',
+                        target: snap.slot,       // 2v2 有 slot, 1v1 為 undefined
+                        nx: snap.ref.x / cachedSize.w,
+                        ny: snap.ref.y / cachedSize.h
+                    });
+                    applyLocalDamageToTarget(snap.ref, dmg);
                 }
             }
             return;

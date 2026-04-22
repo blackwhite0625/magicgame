@@ -182,18 +182,18 @@
     // PvP 傷害倍率 (平衡對戰, 避免秒殺)
     const PVP_DAMAGE_MUL = {
         fireball:   0.50,
-        lightning:  0.35,    // 秒殺元兇, 重砍
-        icespike:   0.60,
-        meteor:     0.35,    // 巨傷重砍
-        wind:       0.50,
-        poison:     0.55,
-        holynova:   0.40,
-        slash:      0.45,
-        groundslam: 0.45,
-        blooddrain: 0.50,
-        summon:     0.5,     // 魔靈召喚也降一半
+        lightning:  0.22,    // 極度減傷 — 幾乎瞬發的閃電不該高傷
+        icespike:   0.55,
+        meteor:     0.32,    // 範圍爆發繼續砍
+        wind:       0.45,
+        poison:     0.50,
+        holynova:   0.38,
+        slash:      0.42,
+        groundslam: 0.42,
+        blooddrain: 0.48,
+        summon:     0.5,
         heal:       1.0,
-        _default:   0.55
+        _default:   0.50
     };
     function pvpMul(kind) {
         return PVP_DAMAGE_MUL[kind] !== undefined ? PVP_DAMAGE_MUL[kind] : PVP_DAMAGE_MUL._default;
