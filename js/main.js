@@ -1341,6 +1341,11 @@
         window.UI.showScreen('mp-lobby');
         document.getElementById('mp-status').classList.add('hidden');
         document.getElementById('mp-code-input').value = '';
+        // 依模式更新標題
+        const titleEl = document.getElementById('mp-lobby-title');
+        if (titleEl) {
+            titleEl.textContent = (game.mp.teamMode === '2v2' ? '2v2' : '1v1') + ' 連線對戰';
+        }
     }
 
     function showMpStatus(msg, isError) {
