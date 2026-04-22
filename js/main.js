@@ -15,7 +15,7 @@
     const MP_REGEN = 8;             // 每秒回復
     const COMBO_TIMEOUT = 3;        // 連擊重置秒數
     const COMBO_DAMAGE_BONUS = 0.1; // 每層 +10% 傷害
-    const MIN_TRAIL_POINTS = 8;     // 最低識別點數 — 太短的軌跡容易誤判成其他技能
+    const MIN_TRAIL_POINTS = 6;     // 最低識別點數 (快速畫的 Z 可能只有 6-7 點)
     // 大亂鬥世界尺寸 (比畫布大很多, 畫面隨玩家移動)
     const BRAWL_WORLD_W = 2400;
     const BRAWL_WORLD_H = 1800;
@@ -790,8 +790,15 @@
         const now = performance.now();
         if (now - lastTrailEmit > 22) {
             lastTrailEmit = now;
-            window.Particles.emitTrail(p.x, p.y, '#bb88ff');
-            window.Particles.emitCore(p.x, p.y, '#ffffff');
+            // bug fix: brawl 粒子在 camera 變換內繪製, pointer 是畫布座標
+            // → 必須轉成世界座標, 否則粒子會飄到地圖別處
+            let px = p.x, py = p.y;
+            if (target === 'game' && game.mp && game.mp.active && game.mp.teamMode === 'brawl') {
+                px += game.camera.x;
+                py += game.camera.y;
+            }
+            window.Particles.emitTrail(px, py, '#bb88ff');
+            window.Particles.emitCore(px, py, '#ffffff');
         }
     }
 
@@ -978,8 +985,9 @@
             return;
         }
         // 歧義檢查: 最佳與次佳分差太小 → 除非準確度夠高否則拒絕
-        // 0.85 太嚴讓閃電常被拒; 降為 0.80 — 0.80+ 分差小也接受, <0.80 才要求分差
-        if (result.margin !== undefined && result.margin < window.Recognizer.MIN_MARGIN && result.accuracy < 0.80) {
+        // 降到 0.72 — 閃電 Z / poison S 在正規化後特別相似, margin 常 <0.05,
+        // 但 accuracy 可以有 0.7+, 用戶畫得還算清楚就該接受
+        if (result.margin !== undefined && result.margin < window.Recognizer.MIN_MARGIN && result.accuracy < 0.72) {
             window.UI.showRecognition(null, 0, false);
             window.UI.playSfx('fail');
             game.combo = 0;
@@ -3805,13 +3813,13 @@
             }
             if (resolved) break;
         }
-        // 確保推出後仍在畫布內
-        const size = getCanvasSize();
+        // 確保推出後仍在世界/畫布內 (brawl 用世界尺寸, 其他用畫布)
+        const bounds = getWorldDims();
         const margin = p.radius + 10;
         if (p.x < margin) p.x = margin;
-        if (p.x > size.w - margin) p.x = size.w - margin;
+        if (p.x > bounds.w - margin) p.x = bounds.w - margin;
         if (p.y < margin) p.y = margin;
-        if (p.y > size.h - margin) p.y = size.h - margin;
+        if (p.y > bounds.h - margin) p.y = bounds.h - margin;
     }
 
     function mpOpponentAsEnemy() {
