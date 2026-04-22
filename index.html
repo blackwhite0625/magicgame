@@ -194,6 +194,15 @@
             <button class="back-btn" data-action="mp-leave">離開房間</button>
         </div>
 
+        <!-- 大亂鬥連線中 overlay (全螢幕) -->
+        <div id="brawl-connecting" class="modal hidden">
+            <div class="modal-content">
+                <h2>加入大亂鬥戰場中...</h2>
+                <div class="mp-pause-note" id="brawl-connecting-status">正在尋找戰場...</div>
+                <button class="menu-btn" id="brawl-connecting-cancel">取消</button>
+            </div>
+        </div>
+
         <!-- 多人對戰: 暫停 / 投降 選單 -->
         <div id="mp-pause-menu" class="modal hidden">
             <div class="modal-content">
@@ -404,13 +413,13 @@
 
     <!-- PeerJS (WebRTC P2P 信令) 用於多人連線; 僅在使用多人時才會真正建立連線 -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="js/particles.js?v=31"></script>
-    <script src="js/recognizer.js?v=31"></script>
-    <script src="js/spells.js?v=31"></script>
-    <script src="js/enemies.js?v=31"></script>
-    <script src="js/maps.js?v=31"></script>
-    <script src="js/multiplayer.js?v=31"></script>
-    <script src="js/ui.js?v=31"></script>
-    <script src="js/main.js?v=31"></script>
+    <script src="js/particles.js?v=32"></script>
+    <script src="js/recognizer.js?v=32"></script>
+    <script src="js/spells.js?v=32"></script>
+    <script src="js/enemies.js?v=32"></script>
+    <script src="js/maps.js?v=32"></script>
+    <script src="js/multiplayer.js?v=32"></script>
+    <script src="js/ui.js?v=32"></script>
+    <script src="js/main.js?v=32"></script>
 </body>
 </html>

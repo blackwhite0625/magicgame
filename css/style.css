@@ -1162,7 +1162,7 @@ html, body {
    ============================================ */
 #brawl-score {
     position: absolute;
-    top: 48px;
+    top: 90px;
     right: 12px;
     background: rgba(30, 10, 40, 0.82);
     border: 1px solid rgba(200, 140, 80, 0.5);
