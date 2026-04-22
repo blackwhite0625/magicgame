@@ -262,20 +262,22 @@ html, body {
     overflow: hidden;
 }
 
-/* 主選單按鈕進場動畫 (按序彈入) */
-#main-menu .menu-btn {
+/* 主選單 / 單人子選單 按鈕進場動畫 (按序彈入) */
+#main-menu .menu-btn,
+#sp-menu .menu-btn {
     opacity: 0;
     transform: translateX(-30px);
     animation: btnSlideIn 0.45s forwards cubic-bezier(0.2, 0.8, 0.3, 1.2);
 }
-#main-menu .menu-btn:nth-child(1) { animation-delay: 0.15s; }
-#main-menu .menu-btn:nth-child(2) { animation-delay: 0.25s; }
-#main-menu .menu-btn:nth-child(3) { animation-delay: 0.35s; }
-#main-menu .menu-btn:nth-child(4) { animation-delay: 0.45s; }
-#main-menu .menu-btn:nth-child(5) { animation-delay: 0.55s; }
-#main-menu .menu-btn:nth-child(6) { animation-delay: 0.65s; }
-#main-menu .menu-btn:nth-child(7) { animation-delay: 0.75s; }
-#main-menu .menu-btn:nth-child(8) { animation-delay: 0.85s; }
+#main-menu .menu-btn:nth-child(1),
+#sp-menu .menu-btn:nth-child(1) { animation-delay: 0.10s; }
+#main-menu .menu-btn:nth-child(2),
+#sp-menu .menu-btn:nth-child(2) { animation-delay: 0.18s; }
+#sp-menu .menu-btn:nth-child(3) { animation-delay: 0.26s; }
+#sp-menu .menu-btn:nth-child(4) { animation-delay: 0.34s; }
+#sp-menu .menu-btn:nth-child(5) { animation-delay: 0.42s; }
+#sp-menu .menu-btn:nth-child(6) { animation-delay: 0.50s; }
+#sp-menu .menu-btn:nth-child(7) { animation-delay: 0.58s; }
 
 @keyframes btnSlideIn {
     from { opacity: 0; transform: translateX(-30px); }
@@ -1070,6 +1072,11 @@ html, body {
     flex-wrap: wrap;
 }
 
+/* 單人子選單的按鈕欄 */
+#sp-menu .menu-buttons {
+    margin-top: 10px;
+}
+
 .mp-mode-card {
     flex: 1 1 280px;
     max-width: 340px;
@@ -1118,6 +1125,20 @@ html, body {
     font-size: 0.88rem;
     color: #a088bb;
     line-height: 1.5;
+}
+
+/* 多人子選單下方的次要按鈕區塊 (練習 / 圖鑑 / 設定) */
+.mp-sub-actions {
+    flex-direction: row;
+    gap: 14px;
+    margin-top: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.mp-sub-actions .menu-btn {
+    padding: 8px 22px;
+    font-size: 0.95rem;
+    min-width: 120px;
 }
 
 /* ============================================

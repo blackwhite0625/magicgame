@@ -66,9 +66,11 @@
         shopPurchased: {},          // { slash: true, groundslam: true, ... }
         statUpgrades: { hp: 0, mp: 0, mpRegen: 0 },
         loadout: ['fireball'],
-        pvpLoadout: ['fireball'],   // 多人專用; 可自由挑選任何 5 個 (一律 Lv1)
+        pvpLoadout: ['fireball'],
         _loadoutContinuation: null,
         _loadoutMpMode: false,
+        _loadoutBackScreen: null,
+        menuContext: null,          // 'sp' | 'mp' | null — 追蹤使用者在哪個子選單
         skillPointsEarned: 0,
         // ==== 多人對戰 ====
         mp: {
@@ -1469,6 +1471,7 @@
         game.mp.paused = false;
         document.getElementById('mp-result').classList.add('hidden');
         document.getElementById('mp-pause-menu').classList.add('hidden');
+        game.menuContext = null;
         window.UI.showScreen('main-menu');
         window.UI.showControlsHint(false);
     }
@@ -2026,6 +2029,7 @@
     function openLoadout(continuation, mpMode) {
         game._loadoutContinuation = continuation;
         game._loadoutMpMode = !!mpMode;
+        game._loadoutBackScreen = window.UI.getCurrentScreen();
         refreshLoadout();
         window.UI.showScreen('loadout-screen');
     }
@@ -3461,6 +3465,7 @@
             game.mp.myName = v;
             try { localStorage.setItem('magicRunes.mpName', v); } catch (e) {}
             window.UI.playSfx('ui');
+            game.menuContext = 'mp';
             window.UI.showScreen('mp-mode-select');
         };
         if (nameConfirm) nameConfirm.addEventListener('click', confirmName);
@@ -3660,8 +3665,12 @@
             case 'infinite':
                 openLoadout(() => startInfinite());
                 break;
+            case 'sp-menu':
+                game.menuContext = 'sp';
+                window.UI.showScreen('sp-menu');
+                break;
             case 'multiplayer':
-                // 先輸入名稱再選模式
+                // 先輸入名稱 → 確認後才進入多人子選單
                 document.getElementById('mp-name-input').value = game.mp.myName === 'Player' ? '' : game.mp.myName;
                 window.UI.showScreen('mp-name-screen');
                 setTimeout(() => document.getElementById('mp-name-input').focus(), 50);
@@ -3699,12 +3708,44 @@
             case 'settings':
                 window.UI.showScreen('settings-screen');
                 break;
-            case 'back-to-menu':
-                window.UI.showScreen('main-menu');
+            case 'back-to-menu': {
+                const current = window.UI.getCurrentScreen();
+                // 頂層子選單 / 名稱畫面 → 回主選單
+                if (current === 'sp-menu' || current === 'mp-mode-select' || current === 'mp-name-screen') {
+                    window.UI.showScreen('main-menu');
+                    game.state = 'menu';
+                    game.menuContext = null;
+                    window.UI.stopBgm();
+                    window.UI.showControlsHint(false);
+                    break;
+                }
+                // Loadout 畫面 → 取消 continuation + 回上層
+                if (current === 'loadout-screen') {
+                    game._loadoutContinuation = null;
+                    game._loadoutMpMode = false;
+                    const back = game._loadoutBackScreen || (game.menuContext === 'mp' ? 'mp-mode-select' : 'sp-menu');
+                    window.UI.showScreen(back);
+                    break;
+                }
+                // 多人連線 Lobby → 回多人子選單
+                if (current === 'mp-lobby') {
+                    if (window.Multiplayer) window.Multiplayer.disconnect();
+                    window.UI.showScreen('mp-mode-select');
+                    break;
+                }
+                // 商城 / 技能 / 關卡選擇 → 回單人子選單
+                if (current === 'shop-screen' || current === 'skills-screen' || current === 'level-select') {
+                    window.UI.showScreen('sp-menu');
+                    break;
+                }
+                // 共用畫面 (符文練習 / 圖鑑 / 設定) → 依 context 回對應子選單
+                const target = game.menuContext === 'mp' ? 'mp-mode-select' : 'sp-menu';
+                window.UI.showScreen(target);
                 game.state = 'menu';
                 window.UI.stopBgm();
                 window.UI.showControlsHint(false);
                 break;
+            }
             case 'resume':
                 game.state = 'playing';
                 document.getElementById('pause-menu').classList.add('hidden');
@@ -3722,6 +3763,7 @@
                 window.UI.hideUpgrade();
                 window.UI.showScreen('main-menu');
                 game.state = 'menu';
+                game.menuContext = null;
                 window.UI.stopBgm();
                 window.UI.showControlsHint(false);
                 break;
