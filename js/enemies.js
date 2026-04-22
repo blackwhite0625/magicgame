@@ -48,10 +48,30 @@
             name: '惡魔領主',
             color: '#cc3344',
             hp: 500, radius: 58, baseSpeed: 50,
-            damage: 26, attackRange: 500, attackCooldown: 1.9,  // +30% damage
+            damage: 26, attackRange: 500, attackCooldown: 1.9,
             castTime: 1.5, projectileSpeed: 400,
             reward: 500, boss: true,
-            barrageChance: 0.5     // Boss 很常三連射
+            barrageChance: 0.5,
+            arcShotChance: 0.2   // 新: 機率釋放 120° 扇形投射
+        },
+        archer: {
+            name: '黑影弓手',
+            color: '#446688',
+            hp: 45, radius: 26, baseSpeed: 48,
+            damage: 16, attackRange: 700, attackCooldown: 2.8,
+            projectileSpeed: 520, reward: 100,
+            volleyChance: 0.4,       // 雙連射機率
+            keepDistance: 350         // 會保持距離 kiting
+        },
+        bomber: {
+            name: '爆破兵',
+            color: '#cc6644',
+            hp: 22, radius: 30, baseSpeed: 95,
+            damage: 40, attackRange: 50, attackCooldown: 0.3,
+            reward: 75,
+            explodeOnContact: true,  // 接觸即爆
+            explodeRadius: 110,
+            fuseColor: '#ff4422'
         }
     };
 
@@ -462,12 +482,127 @@
         ctx.fillRect(x + r * 0.46, y + r * 0.18, 4, 8);
     }
 
+    function drawArcher(ctx, x, y, r) {
+        // 暗色長袍
+        ctx.fillStyle = '#2a3a48';
+        ctx.beginPath();
+        ctx.moveTo(x - r * 0.42, y - r * 0.3);
+        ctx.lineTo(x + r * 0.42, y - r * 0.3);
+        ctx.quadraticCurveTo(x + r * 0.95, y + r * 0.6, x + r * 1.05, y + r * 1.2);
+        ctx.lineTo(x - r * 1.05, y + r * 1.2);
+        ctx.quadraticCurveTo(x - r * 0.95, y + r * 0.6, x - r * 0.42, y - r * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        // 兜帽
+        ctx.fillStyle = '#1a2838';
+        ctx.beginPath();
+        ctx.moveTo(x - r * 0.05, y - r * 1.15);
+        ctx.quadraticCurveTo(x + r * 0.55, y - r * 0.9, x + r * 0.65, y - r * 0.2);
+        ctx.quadraticCurveTo(x + r * 0.2, y - r * 0.02, x, y);
+        ctx.quadraticCurveTo(x - r * 0.2, y - r * 0.02, x - r * 0.65, y - r * 0.2);
+        ctx.quadraticCurveTo(x - r * 0.55, y - r * 0.9, x - r * 0.05, y - r * 1.15);
+        ctx.closePath();
+        ctx.fill();
+        // 內黑
+        ctx.fillStyle = '#060a12';
+        ctx.beginPath();
+        ctx.ellipse(x, y - r * 0.45, r * 0.4, r * 0.45, 0, 0, TWO_PI);
+        ctx.fill();
+        // 發光眼
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#66ccff';
+        ctx.globalAlpha = 0.4;
+        ctx.beginPath();
+        ctx.arc(x - r * 0.18, y - r * 0.5, r * 0.14, 0, TWO_PI);
+        ctx.arc(x + r * 0.18, y - r * 0.5, r * 0.14, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#aaddff';
+        ctx.beginPath();
+        ctx.arc(x - r * 0.18, y - r * 0.5, r * 0.06, 0, TWO_PI);
+        ctx.arc(x + r * 0.18, y - r * 0.5, r * 0.06, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        // 弓 (右側)
+        ctx.strokeStyle = '#5a3a20';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(x + r * 0.55, y + r * 0.1, r * 0.65, -Math.PI * 0.8, Math.PI * 0.8);
+        ctx.stroke();
+        // 弦
+        ctx.strokeStyle = '#aaaaaa';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + r * 0.55 + Math.cos(-Math.PI * 0.8) * r * 0.65, y + r * 0.1 + Math.sin(-Math.PI * 0.8) * r * 0.65);
+        ctx.lineTo(x + r * 0.55 + Math.cos(Math.PI * 0.8) * r * 0.65, y + r * 0.1 + Math.sin(Math.PI * 0.8) * r * 0.65);
+        ctx.stroke();
+    }
+
+    function drawBomber(ctx, x, y, r) {
+        // 壯碩身體 (紅黑炸彈體型)
+        const g = ctx.createRadialGradient(x, y + r * 0.2, 0, x, y + r * 0.2, r);
+        g.addColorStop(0, '#994422');
+        g.addColorStop(1, '#4a1a0a');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y + r * 0.15, r * 0.85, 0, TWO_PI);
+        ctx.fill();
+        // 腰帶 (炸彈線)
+        ctx.strokeStyle = '#ff9944';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y + r * 0.2, r * 0.75, 0, TWO_PI);
+        ctx.stroke();
+        // 頭部
+        ctx.fillStyle = '#3a1408';
+        ctx.beginPath();
+        ctx.arc(x, y - r * 0.35, r * 0.5, 0, TWO_PI);
+        ctx.fill();
+        // 紅色發光眼 (威脅感)
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#ff2200';
+        ctx.globalAlpha = 0.5;
+        const pulse = 0.7 + Math.sin(Date.now() / 120) * 0.3;
+        ctx.beginPath();
+        ctx.arc(x - r * 0.15, y - r * 0.35, r * 0.12 * pulse, 0, TWO_PI);
+        ctx.arc(x + r * 0.15, y - r * 0.35, r * 0.12 * pulse, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffcc22';
+        ctx.beginPath();
+        ctx.arc(x - r * 0.15, y - r * 0.35, r * 0.05, 0, TWO_PI);
+        ctx.arc(x + r * 0.15, y - r * 0.35, r * 0.05, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        // 引信 (頂部火花)
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y - r * 0.75);
+        ctx.quadraticCurveTo(x + r * 0.1, y - r * 1.0, x + r * 0.05, y - r * 1.2);
+        ctx.stroke();
+        // 火花
+        const tFlicker = Date.now() / 80;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#ff6622';
+        ctx.beginPath();
+        ctx.arc(x + r * 0.05 + Math.sin(tFlicker) * 2, y - r * 1.2 + Math.cos(tFlicker) * 2, 4, 0, TWO_PI);
+        ctx.fill();
+        ctx.fillStyle = '#ffee66';
+        ctx.beginPath();
+        ctx.arc(x + r * 0.05, y - r * 1.2, 2, 0, TWO_PI);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+    }
+
     const DRAW_FNS = {
         skeleton: drawSkeleton,
         assassin: drawAssassin,
         warlock: drawWarlock,
         gargoyle: drawGargoyle,
-        demon: drawDemon
+        demon: drawDemon,
+        archer: drawArcher,
+        bomber: drawBomber
     };
 
     // 敵人投射物
@@ -545,8 +680,15 @@
                 }
             }
 
+            // Archer kite 行為: 距離太近反而後退
+            if (e.def.keepDistance && dist < e.def.keepDistance * 0.7) {
+                e.x -= (dx / dist) * e.speed * 0.6 * dt;
+                e.y -= (dy / dist) * e.speed * 0.6 * dt;
+            } else if (e.def.keepDistance && dist < e.def.keepDistance && dist > e.def.keepDistance * 0.7) {
+                // 停在射程外緣, 不衝上來
+            }
             // 移動邏輯: 接近玩家直到攻擊範圍
-            if (dist > e.def.attackRange) {
+            else if (dist > e.def.attackRange) {
                 e.x += (dx / dist) * e.speed * dt;
                 e.y += (dy / dist) * e.speed * dt;
             } else {
@@ -597,6 +739,23 @@
     }
 
     function performAttack(e, playerRef, onPlayerHit) {
+        // Bomber: 近身自爆 (AOE), 隨後死亡
+        if (e.type === 'bomber' && e.def.explodeOnContact) {
+            const dx = playerRef.x - e.x, dy = playerRef.y - e.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < e.def.explodeRadius) {
+                onPlayerHit(e.def.damage, { kind: 'explode', x: e.x, y: e.y });
+            }
+            // 爆炸特效
+            global.Particles.burst(e.x, e.y, {
+                count: 60, spread: 450, life: 1.0,
+                color: '#ff6622', color2: '#ffcc44', size: 6
+            });
+            // 殺死自己
+            e.hp = 0;
+            e.dead = true;
+            return;
+        }
         // 近戰型 (skeleton/assassin): 直接扣血 — 進入距離才觸發
         if (e.type === 'skeleton' || e.type === 'assassin') {
             onPlayerHit(e.def.damage, { kind: 'melee', x: e.x, y: e.y });
@@ -955,7 +1114,7 @@
         };
 
         // 敵種池 — 高關卡都可出現
-        const pool = ['skeleton', 'warlock', 'gargoyle', 'assassin'];
+        const pool = ['skeleton', 'warlock', 'gargoyle', 'assassin', 'archer', 'bomber'];
         const bossPool = ['demon'];
 
         const mkSpawn = (type) => {
@@ -1060,7 +1219,9 @@
         const pool = ['skeleton'];
         if (waveNum >= 2) pool.push('assassin');
         if (waveNum >= 3) pool.push('warlock');
+        if (waveNum >= 4) pool.push('bomber');
         if (waveNum >= 5) pool.push('gargoyle');
+        if (waveNum >= 7) pool.push('archer');
 
         // 敵人數量 — 上限提高至 10, 遞增較快
         const baseCount = Math.min(10, 2 + Math.floor((waveNum - 1) / 1.5));

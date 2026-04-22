@@ -162,8 +162,20 @@
             damage: 35,
             critMultiplier: 1.8,
             range: 170,
-            lifesteal: 0.8,          // 傷害的 80% 轉為治療
+            lifesteal: 0.8,
             description: 'C 形 — 近戰吸血，回復 80% 造成傷害'
+        },
+        summon: {
+            name: '魔靈召喚',
+            symbol: '',
+            color: '#ccaaff',
+            mpCost: 40,
+            cooldown: 18.0,
+            summonCount: 2,
+            summonHp: 30,
+            summonDamage: 12,
+            summonLife: 20,          // 秒
+            description: 'Ω 形 — 召喚 2 個魔靈協助攻擊, 持續 20 秒'
         }
     };
 
@@ -179,7 +191,8 @@
         slash:      0.45,
         groundslam: 0.45,
         blooddrain: 0.50,
-        heal:       1.0,     // 治療量不調
+        summon:     0.5,     // 魔靈召喚也降一半
+        heal:       1.0,
         _default:   0.55
     };
     function pvpMul(kind) {

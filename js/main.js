@@ -59,9 +59,10 @@
         hitstopTimer: 0,
         damageNumbers: [],
         flashFrame: 0,
-        traps: [],             // 地圖陷阱
-        pickups: [],           // 可撿拾道具
-        activeBuffs: {},       // { damage: {sec}, speed: {sec} ... }
+        traps: [],
+        pickups: [],
+        activeBuffs: {},
+        allies: [],            // 召喚的魔靈
         gold: 0,
         shopPurchased: {},          // { slash: true, groundslam: true, ... }
         statUpgrades: { hp: 0, mp: 0, mpRegen: 0 },
@@ -70,8 +71,9 @@
         _loadoutContinuation: null,
         _loadoutMpMode: false,
         _loadoutBackScreen: null,
-        menuContext: null,          // 'sp' | 'mp' | null — 追蹤使用者在哪個子選單
+        menuContext: null,
         skillPointsEarned: 0,
+        infiniteSavedWave: 0,       // 無限模式上次中途離開的波次
         // ==== 多人對戰 ====
         mp: {
             active: false,
@@ -131,6 +133,8 @@
         }
         const sp = localStorage.getItem('magicRunes.skillPointsEarned');
         if (sp) game.skillPointsEarned = Math.max(0, parseInt(sp, 10) || 0);
+        const infSaved = localStorage.getItem('magicRunes.infiniteSavedWave');
+        if (infSaved) game.infiniteSavedWave = Math.max(0, parseInt(infSaved, 10) || 0);
         const lo = localStorage.getItem('magicRunes.loadout');
         if (lo) {
             const parsed = JSON.parse(lo);
@@ -179,6 +183,7 @@
             localStorage.setItem('magicRunes.loadout', JSON.stringify(game.loadout));
             localStorage.setItem('magicRunes.pvpLoadout', JSON.stringify(game.pvpLoadout));
             localStorage.setItem('magicRunes.skillPointsEarned', String(game.skillPointsEarned));
+            localStorage.setItem('magicRunes.infiniteSavedWave', String(game.infiniteSavedWave));
         } catch (e) {}
     }
 
@@ -493,6 +498,138 @@
         }
     }
 
+    // ==== 召喚系統 (魔靈盟友) ====
+    function spawnAlly(x, y, hp, damage, life) {
+        game.allies.push({
+            x: x, y: y,
+            vx: 0, vy: 0,
+            hp: hp, maxHp: hp,
+            damage: damage,
+            radius: 16,
+            life: life,
+            maxLife: life,
+            attackCd: 0,
+            bobPhase: Math.random() * Math.PI * 2,
+            wandAngle: Math.random() * Math.PI * 2
+        });
+    }
+
+    function updateAllies(dt) {
+        // 決定目標敵人池 (單人 = game.enemies; PvP = 對手隊伍)
+        let targets;
+        if (game.state === 'pvp' && game.mp && game.mp.active) {
+            targets = getEnemyTargets();
+        } else {
+            targets = game.enemies;
+        }
+        for (let i = game.allies.length - 1; i >= 0; i--) {
+            const a = game.allies[i];
+            a.life -= dt;
+            a.bobPhase += dt * 4;
+            a.attackCd -= dt;
+            if (a.life <= 0 || a.hp <= 0) {
+                // 消散特效
+                window.Particles.burst(a.x, a.y, {
+                    count: 18, spread: 140, life: 0.5,
+                    color: '#ccaaff', color2: '#ffffff', size: 4
+                });
+                game.allies.splice(i, 1);
+                continue;
+            }
+            // 找最近敵人
+            let nearest = null, nd = Infinity;
+            for (let j = 0; j < targets.length; j++) {
+                const e = targets[j];
+                if (!e || e.dead) continue;
+                const ddx = e.x - a.x, ddy = e.y - a.y;
+                const d = ddx * ddx + ddy * ddy;
+                if (d < nd) { nd = d; nearest = e; }
+            }
+            if (nearest) {
+                const ddx = nearest.x - a.x, ddy = nearest.y - a.y;
+                const dist = Math.sqrt(nd);
+                const speed = 140;
+                a.x += (ddx / dist) * speed * dt;
+                a.y += (ddy / dist) * speed * dt;
+                // 接觸攻擊
+                if (a.attackCd <= 0 && dist < nearest.radius + a.radius + 4) {
+                    a.attackCd = 0.7;
+                    if (game.state === 'pvp') {
+                        // PvP: 模擬投射物命中傳送給對方
+                        if (nearest._slot !== undefined || game.mp.teamMode !== '2v2') {
+                            window.Multiplayer.send({
+                                type: 'hit',
+                                damage: a.damage,
+                                spell: 'summon',
+                                nx: nearest.x / cachedSize.w,
+                                ny: nearest.y / cachedSize.h,
+                                target: nearest._slot
+                            });
+                            applyLocalDamageToTarget(nearest, a.damage);
+                        }
+                    } else {
+                        window.Enemies.damageEnemy(nearest, a.damage);
+                        spawnDamageNumber(nearest.x, nearest.y, a.damage, false);
+                        if (nearest.dead) onEnemyKilled(nearest);
+                    }
+                    // 攻擊視覺
+                    window.Particles.burst(nearest.x, nearest.y, {
+                        count: 10, spread: 100, life: 0.3,
+                        color: '#ccaaff', color2: '#ffffff', size: 3
+                    });
+                }
+            } else {
+                // 沒有敵人: 繞玩家飄
+                a.wandAngle += dt * 1.2;
+                const tx = game.player.x + Math.cos(a.wandAngle) * 80;
+                const ty = game.player.y + Math.sin(a.wandAngle) * 80;
+                const ddx = tx - a.x, ddy = ty - a.y;
+                a.x += ddx * dt * 3;
+                a.y += ddy * dt * 3;
+            }
+        }
+    }
+
+    function renderAllies(c) {
+        if (game.allies.length === 0) return;
+        c.save();
+        const TWO_PI = 6.283185307179586;
+        for (const a of game.allies) {
+            const bob = Math.sin(a.bobPhase) * 3;
+            const lifePct = a.life / a.maxLife;
+            const alpha = lifePct < 0.3 ? (Math.sin(a.bobPhase * 6) * 0.4 + 0.6) : 1;
+            c.globalAlpha = alpha;
+            // 外層光暈
+            c.globalCompositeOperation = 'lighter';
+            c.fillStyle = 'rgba(200, 170, 255, 0.45)';
+            c.beginPath();
+            c.arc(a.x, a.y + bob, a.radius * 1.8, 0, TWO_PI);
+            c.fill();
+            // 本體
+            c.globalCompositeOperation = 'source-over';
+            c.fillStyle = '#b599ee';
+            c.beginPath();
+            c.arc(a.x, a.y + bob, a.radius, 0, TWO_PI);
+            c.fill();
+            // 眼睛
+            c.fillStyle = '#fff8aa';
+            c.beginPath();
+            c.arc(a.x - 4, a.y + bob - 2, 2.2, 0, TWO_PI);
+            c.arc(a.x + 4, a.y + bob - 2, 2.2, 0, TWO_PI);
+            c.fill();
+            // HP 條 (當有損傷時顯示)
+            if (a.hp < a.maxHp) {
+                const barW = 28;
+                c.fillStyle = 'rgba(0,0,0,0.6)';
+                c.fillRect(a.x - barW / 2, a.y - a.radius - 8, barW, 3);
+                c.fillStyle = '#66ff88';
+                c.fillRect(a.x - barW / 2, a.y - a.radius - 8, barW * (a.hp / a.maxHp), 3);
+            }
+        }
+        c.globalAlpha = 1;
+        c.restore();
+    }
+
     function renderDamageNumbers(c) {
         if (game.damageNumbers.length === 0) return;
         c.save();
@@ -742,6 +879,7 @@
                 window.Multiplayer.send({
                     type: 'cast',
                     spell: name,
+                    slot: game.mp.mySlot,    // 2v2 追蹤誰施法
                     nx: game.player.x / cachedSize.w,
                     ny: game.player.y / cachedSize.h,
                     ntx: game.mp.opponent.x / cachedSize.w,
@@ -1178,6 +1316,24 @@
                 triggerShake(10, 0.35);
                 break;
             }
+            case 'summon': {
+                // 召喚 2~3 個魔靈繞玩家散開, 自行尋敵攻擊
+                const count = cfg.summonCount + (hi ? 1 : 0) + (max ? 1 : 0);
+                for (let i = 0; i < count; i++) {
+                    const a = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+                    spawnAlly(
+                        p.x + Math.cos(a) * 60,
+                        p.y + Math.sin(a) * 60,
+                        cfg.summonHp, cfg.summonDamage, cfg.summonLife
+                    );
+                }
+                window.Particles.burst(p.x, p.y, {
+                    count: 40, spread: 280, life: 0.9,
+                    color: '#ccaaff', color2: '#ffffff', size: 5
+                });
+                window.Spells.createShockwave(p.x, p.y, 120, '#ccaaff', 0.6);
+                break;
+            }
             case 'blooddrain': {
                 // 近戰吸血: 擊中敵人並回復生命
                 const reach = cfg.range + (level - 1) * 15;
@@ -1471,9 +1627,9 @@
         window.Multiplayer.disconnect();
         game.mp.active = false;
         game.mp.paused = false;
+        stopPingLoop();
         document.getElementById('mp-result').classList.add('hidden');
         document.getElementById('mp-pause-menu').classList.add('hidden');
-        // 回多人模式子選單 (保留 context)
         window.UI.showScreen('mp-mode-select');
         window.UI.showControlsHint(false);
     }
@@ -1717,6 +1873,24 @@
                 }
                 renderRoomSlots();
                 break;
+            case 'ping':
+                // 對方 ping 我 → 回傳 pong 帶上原 timestamp
+                window.Multiplayer.send({ type: 'pong', t: data.t });
+                break;
+            case 'pong':
+                if (typeof data.t === 'number') {
+                    const rtt = Math.round(performance.now() - data.t);
+                    game.mp.pingMs = rtt;
+                    const el = document.getElementById('mp-ping-display');
+                    if (el) {
+                        el.textContent = 'Ping: ' + rtt + ' ms';
+                        el.classList.remove('ping-good', 'ping-mid', 'ping-bad');
+                        if (rtt < 60) el.classList.add('ping-good');
+                        else if (rtt < 150) el.classList.add('ping-mid');
+                        else el.classList.add('ping-bad');
+                    }
+                }
+                break;
             case 'hello':
                 // 訪客連線後送上名稱與自己的 slot; 房主更新並廣播
                 if (game.mp.isHost && data.name && data.slot !== undefined) {
@@ -1799,15 +1973,19 @@
             case 'leave':
                 endMpMatch('對手離開了', 'forfeit');
                 break;
-            case 'surrender':
-                // 對手投降, 我直接贏
-                if (game.mp.active) {
-                    // 填完剩餘獲勝數
-                    const need = Math.ceil(mp.rounds / 2);
+            case 'surrender': {
+                if (!game.mp.active) break;
+                const need = Math.ceil(mp.rounds / 2);
+                // 2v2: 若隊友投降 — 我也輸了; 對手投降 — 我贏
+                if (data.team !== undefined && mp.teamMode === '2v2' && data.team === mp.myTeam) {
+                    mp.oppWins = Math.max(mp.oppWins, need);
+                    endMpMatch('你的隊友投降了...', 'teammate-surrender');
+                } else {
                     mp.myWins = Math.max(mp.myWins, need);
                     endMpMatch('對手投降了, 你贏了！', 'opp-surrender');
                 }
                 break;
+            }
             case 'rematch':
                 // 對方點了返回房間
                 if (game.mp.active) {
@@ -1828,13 +2006,23 @@
     }
 
     function spawnRemoteCast(data) {
-        // 將對手端的施法還原到本地視覺 — 起點是對手位置, 目標朝我方向
-        const opp = game.mp.opponent;
+        // 將對手端的施法還原到本地視覺
+        // 2v2: 依 data.slot 找到施法者位置; 1v1: 用 mp.opponent
         const me = game.player;
-        // 若 data 附 ntx/nty, 代表發送端目標 (本地自己位置的歸一化)
+        let caster;
+        if (game.mp.teamMode === '2v2' && data.slot !== undefined && game.mp.players[data.slot]) {
+            caster = game.mp.players[data.slot];
+        } else {
+            caster = game.mp.opponent;
+        }
+        const opp = caster;
         const tx = (data.ntx !== undefined ? data.ntx * cachedSize.w : me.x) + (Math.random() - 0.5) * 30;
         const ty = (data.nty !== undefined ? data.nty * cachedSize.h : me.y) + (Math.random() - 0.5) * 30;
         const name = data.spell;
+        // 播放遠端施法音效 (即使不是直接對我也聽得到對戰氣氛)
+        if (name && window.UI && window.UI.playSfx) {
+            try { window.UI.playSfx(name); } catch (e) {}
+        }
         switch (name) {
             case 'fireball':
             case 'icespike':
@@ -1875,7 +2063,30 @@
         mp.oppWins = 0;
         mp.roundNum = 0;
         mp.roundState = 'idle';
+        startPingLoop();
         startMpRound();
+    }
+
+    // Ping 循環: 每 2 秒送一次 ping
+    function startPingLoop() {
+        stopPingLoop();
+        document.getElementById('mp-ping-display').classList.remove('hidden');
+        game.mp.pingInterval = setInterval(() => {
+            if (window.Multiplayer && window.Multiplayer.isConnected()) {
+                window.Multiplayer.send({ type: 'ping', t: performance.now() });
+            }
+        }, 2000);
+        // 立刻發一次
+        if (window.Multiplayer.isConnected()) {
+            window.Multiplayer.send({ type: 'ping', t: performance.now() });
+        }
+    }
+    function stopPingLoop() {
+        if (game.mp.pingInterval) {
+            clearInterval(game.mp.pingInterval);
+            game.mp.pingInterval = null;
+        }
+        document.getElementById('mp-ping-display').classList.add('hidden');
     }
 
     function startMpRound() {
@@ -1944,6 +2155,7 @@
         game.traps = [];
         game.pickups = [];
         game.activeBuffs = {};
+        game.allies.length = 0;
         game.hitstopTimer = 0;
         game.flashFrame = 0;
         window.UI.buildCooldownIcons(window.Spells.CONFIG, game.pvpLoadout);
@@ -1976,6 +2188,7 @@
         const mp = game.mp;
         mp.active = false;
         mp.paused = false;
+        stopPingLoop();
         document.getElementById('mp-pause-menu').classList.add('hidden');
         game.state = 'menu';
         const stats = {
@@ -2095,10 +2308,11 @@
         game.state = 'playing';
         game.infinite = true;
         game.level = 0;
-        game.wave = 0;
-        game.nextWaveDelay = 1.5;  // 1.5 秒後第 1 波
+        // 若存檔有先前進度, 從保存波次繼續 (wave 會在 updateInfiniteWaves 中 +1)
+        game.wave = game.infiniteSavedWave > 0 ? (game.infiniteSavedWave - 1) : 0;
+        game.nextWaveDelay = 1.5;
         commonLevelStart();
-        game.waves = [];  // 無限模式用 nextWaveDelay 驅動
+        game.waves = [];
         // 顯示波次/高分，隱藏關卡
         document.getElementById('level-display').classList.add('hidden');
         document.getElementById('wave-display').classList.remove('hidden');
@@ -2147,6 +2361,7 @@
         game.traps.length = 0;
         game.pickups.length = 0;
         game.activeBuffs = {};
+        game.allies.length = 0;
         // 關卡/無限模式皆放置陷阱: 關卡越後越多, 無限視波次
         const trapCount = game.infinite
             ? Math.min(6, 1 + Math.floor((game.wave || 0) / 3))
@@ -2166,7 +2381,9 @@
         const timeSec = Math.round((performance.now() - game.levelStartTime) / 1000);
 
         if (game.infinite) {
-            // 無限模式只有失敗
+            // 無限模式只有失敗 — 死亡後清除儲存的進度
+            game.infiniteSavedWave = 0;
+            saveProgress();
             const newHigh = game.score > game.infiniteHighScore;
             if (newHigh) {
                 game.infiniteHighScore = game.score;
@@ -2370,6 +2587,7 @@
         window.Spells.updateMeleeArcs(dt);
         updateDamageNumbers(dt);
         updatePickupsAndTraps(dt);
+        updateAllies(dt);
 
         window.Particles.update(dt);
 
@@ -2433,6 +2651,7 @@
         window.Spells.renderLightning(ctx);
         window.Spells.renderShockwaves(ctx);
         window.Spells.renderMeleeArcs(ctx);
+        renderAllies(ctx);
         window.Particles.render(ctx);
         renderDamageNumbers(ctx);
         renderTrail(ctx);
@@ -2813,6 +3032,7 @@
         window.Spells.updateShockwaves(dt);
         window.Spells.updateMeleeArcs(dt);
         updateDamageNumbers(dt);
+        updateAllies(dt);
 
         // 投射物與障礙物碰撞
         window.Spells.checkProjectilesVsObstacles(mp.obstacles, window.Maps.pointInObstacle);
@@ -2974,6 +3194,7 @@
         window.Spells.renderLightning(ctx);
         window.Spells.renderShockwaves(ctx);
         window.Spells.renderMeleeArcs(ctx);
+        renderAllies(ctx);
         window.Particles.render(ctx);
         renderDamageNumbers(ctx);
         renderTrail(ctx);
@@ -3658,10 +3879,9 @@
 
     function surrenderMp() {
         if (!game.mp.active) return;
-        // 通知對手
-        window.Multiplayer.send({ type: 'surrender' });
-        // 本地結束: 對手贏
         const mp = game.mp;
+        // 含自身 slot/team 以便 2v2 判定是隊友還是對手投降
+        window.Multiplayer.send({ type: 'surrender', slot: mp.mySlot, team: mp.myTeam });
         const need = Math.ceil(mp.rounds / 2);
         mp.oppWins = Math.max(mp.oppWins, need);
         mp.paused = false;
@@ -3781,7 +4001,11 @@
                 document.getElementById('pause-menu').classList.add('hidden');
                 window.UI.hideResult();
                 window.UI.hideUpgrade();
-                // 回到對應的子選單, 不直接回主選單
+                // 無限模式中途退出: 記住當前波次
+                if (game.infinite && game.wave > 0 && game.player.hp > 0) {
+                    game.infiniteSavedWave = game.wave;
+                    saveProgress();
+                }
                 const target = game.menuContext === 'mp'
                     ? 'mp-mode-select'
                     : (game.menuContext === 'sp' ? 'sp-menu' : 'main-menu');
