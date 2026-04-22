@@ -119,7 +119,11 @@
             }
         }
         const unlocked = localStorage.getItem('magicRunes.unlockedLevels');
-        if (unlocked) game.unlockedLevels = Math.max(1, Math.min(20, parseInt(unlocked, 10) || 1));
+        if (unlocked) {
+            // bug fix: 舊版 cap 是 20, 但關卡已擴充到 50。改用 TOTAL_LEVELS 防止進度被截斷
+            const maxLv = (window.Enemies && window.Enemies.TOTAL_LEVELS) || 50;
+            game.unlockedLevels = Math.max(1, Math.min(maxLv, parseInt(unlocked, 10) || 1));
+        }
         const goldStr = localStorage.getItem('magicRunes.gold');
         if (goldStr) game.gold = Math.max(0, parseInt(goldStr, 10) || 0);
         const shopStr = localStorage.getItem('magicRunes.shopPurchased');
@@ -1975,6 +1979,8 @@
                 }
                 break;
             case 'assignSlot': {
+                // 安全: assignSlot 只由房主發給訪客, 房主不應處理, 否則會被惡意訊息重新指派
+                if (game.mp.isHost) break;
                 // 安全: 驗證 slot / team / teamMode / rounds
                 const s = parseInt(data.slot, 10);
                 const t = parseInt(data.team, 10);
@@ -1992,6 +1998,8 @@
                 break;
             }
             case 'lobby':
+                // 安全: lobby 是房主廣播, 房主不處理以免被訪客覆寫玩家列表
+                if (game.mp.isHost) break;
                 mp.teamMode = data.teamMode || mp.teamMode;
                 mp.players = {};
                 for (const s in data.players) {
@@ -2074,6 +2082,8 @@
                 break;
             }
             case 'teamSwap':
+                // 安全: teamSwap 由房主決定, 房主不處理以免被訪客強制換隊
+                if (game.mp.isHost) break;
                 // 房主改變某 slot 的隊伍
                 if (data.slot === mp.mySlot) {
                     mp.myTeam = data.team;
@@ -2084,6 +2094,8 @@
                 renderRoomSlots();
                 break;
             case 'start':
+                // 安全: start 由房主發, 房主不處理以免被訪客強制開始
+                if (game.mp.isHost) break;
                 mp.mapId = data.mapId || mp.mapId;
                 mp.rounds = data.rounds || mp.rounds;
                 beginMpMatch(false);
@@ -2529,6 +2541,7 @@
         game.kills = 0;
         game.totalAccuracy = 0;
         game.spellsCast = 0;
+        game.goldAtLevelStart = game.gold; // 用於結算顯示「本場賺取金幣」
         game.enemies = [];
         game.waveTimer = 0;
         game.levelStartTime = performance.now();
@@ -2605,14 +2618,19 @@
         if (victory) {
             clearBonus = 25 + game.level * 8;
             game.gold += clearBonus;
-            saveProgress();
         }
+        // 本場賺取金幣 = 擊殺金幣 + 關卡獎勵 (失敗時無關卡獎勵, 但擊殺金幣仍算)
+        const earnedGold = Math.max(0, game.gold - (game.goldAtLevelStart || 0));
+        // 無論勝敗都存檔, 避免失敗時擊殺金幣遺失
+        saveProgress();
+        let earnedDisplay = earnedGold + ' G';
+        if (clearBonus > 0) earnedDisplay += ' (含關卡獎勵 ' + clearBonus + ')';
         const stats = {
             '擊殺數': game.kills,
             '施法次數': game.spellsCast,
             '平均準確度': avgAcc + '%',
             '最終分數': game.score,
-            '獲得金幣': clearBonus ? (clearBonus + ' G (+關卡獎勵)') : '0 G',
+            '獲得金幣': earnedDisplay,
             '總金幣': game.gold + ' G',
             '用時': timeSec + ' 秒'
         };
@@ -3092,6 +3110,8 @@
         const mp = game.mp;
         // 安全: 對戰未進行時不做任何事 (rematch 後進入 mp-room 時避免殘留邏輯)
         if (!mp.active) return;
+        // bug fix: 暫停時必須真正凍結模擬 (之前只停輸入, 敵人/岩漿/狀態封包仍在跑)
+        if (mp.paused) return;
 
         // Hitstop
         if (game.hitstopTimer > 0) {

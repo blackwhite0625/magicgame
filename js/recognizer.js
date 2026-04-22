@@ -188,15 +188,26 @@
      */
     function resample(pts, n) {
         if (pts.length < 2) return pts.slice();
-        const I = pathLength(pts) / (n - 1);
+        const total = pathLength(pts);
+        // 防禦: 若所有點重合 (長度 = 0), 會造成 I=0 → splice 無窮迴圈 + NaN 座標
+        if (!(total > 0) || !isFinite(total)) {
+            const out = [];
+            for (let i = 0; i < n; i++) out.push({ x: pts[0].x, y: pts[0].y });
+            return out;
+        }
+        const I = total / (n - 1);
         let D = 0;
         const newPts = [pts[0]];
         const src = pts.slice();
-        for (let i = 1; i < src.length; i++) {
+        // 防禦: 限制迭代次數, 避免極端 input 導致瀏覽器卡住
+        const maxIter = Math.max(4096, (pts.length + n) * 8);
+        let iter = 0;
+        for (let i = 1; i < src.length && iter < maxIter; i++, iter++) {
             const d = distance(src[i - 1], src[i]);
             if (D + d >= I) {
-                const qx = src[i - 1].x + ((I - D) / d) * (src[i].x - src[i - 1].x);
-                const qy = src[i - 1].y + ((I - D) / d) * (src[i].y - src[i - 1].y);
+                const ratio = d > 0 ? (I - D) / d : 0;
+                const qx = src[i - 1].x + ratio * (src[i].x - src[i - 1].x);
+                const qy = src[i - 1].y + ratio * (src[i].y - src[i - 1].y);
                 const q = { x: qx, y: qy };
                 newPts.push(q);
                 src.splice(i, 0, q);
