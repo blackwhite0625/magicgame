@@ -1033,6 +1033,107 @@ html, body {
 }
 
 /* ============================================
+   多人房間公共大廳 (左下角)
+   ============================================ */
+.mp-chat {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 320px;
+    max-width: 36vw;
+    background: linear-gradient(180deg, rgba(30, 15, 50, 0.9), rgba(15, 8, 30, 0.95));
+    border: 1px solid #5a3a8a;
+    border-radius: 8px;
+    padding: 8px 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-shadow: 0 0 18px rgba(120, 60, 200, 0.25);
+    z-index: 10;
+}
+
+.mp-chat-title {
+    font-size: 0.8rem;
+    color: #a088bb;
+    letter-spacing: 0.15em;
+    border-bottom: 1px solid rgba(120, 80, 180, 0.3);
+    padding-bottom: 4px;
+}
+
+.mp-chat-log {
+    height: 160px;
+    overflow-y: auto;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: #6644aa transparent;
+}
+
+.mp-chat-log::-webkit-scrollbar { width: 6px; }
+.mp-chat-log::-webkit-scrollbar-thumb { background: #6644aa; border-radius: 3px; }
+
+.mp-chat-msg {
+    color: #e8d9ff;
+    padding: 1px 0;
+    word-break: break-word;
+}
+.mp-chat-msg.self .mp-chat-name { color: #aaffcc; }
+.mp-chat-msg.system {
+    color: #ffcc66;
+    font-style: italic;
+    font-size: 0.78rem;
+    opacity: 0.85;
+    text-align: center;
+}
+.mp-chat-name {
+    color: #bb88ff;
+    font-weight: bold;
+}
+.mp-chat-text {
+    color: #e8d9ff;
+}
+
+.mp-chat-form {
+    display: flex;
+    gap: 6px;
+}
+
+#mp-chat-input {
+    flex: 1;
+    padding: 6px 10px;
+    background: rgba(10, 5, 20, 0.7);
+    border: 1px solid #5a3a8a;
+    color: #e8d9ff;
+    font-family: inherit;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    box-sizing: border-box;
+    min-width: 0;
+}
+#mp-chat-input:focus {
+    outline: none;
+    border-color: #bb88ff;
+    box-shadow: 0 0 8px rgba(180, 120, 255, 0.4);
+}
+
+.mp-chat-send {
+    padding: 6px 14px;
+    background: linear-gradient(180deg, rgba(90, 45, 135, 0.9), rgba(60, 30, 90, 0.95));
+    color: #e8d9ff;
+    border: 1px solid #6644aa;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+}
+.mp-chat-send:hover {
+    background: linear-gradient(180deg, rgba(120, 60, 180, 0.95), rgba(80, 40, 120, 1));
+    border-color: #bb88ff;
+}
+
+/* ============================================
    Ping 顯示 (對戰右上角)
    ============================================ */
 #mp-ping-display {

@@ -1533,12 +1533,81 @@
         refreshShop();
     }
 
+    // ==== 聊天室 ====
+    const CHAT_MAX_MESSAGES = 60;     // log 最多保留訊息數 (避免 DOM 膨脹)
+    const CHAT_MAX_LEN = 100;          // 單則訊息字數上限
+
+    function initChat() {
+        const form = document.getElementById('mp-chat-form');
+        const input = document.getElementById('mp-chat-input');
+        if (!form || form.dataset.bound) return;
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            sendChatMessage();
+        });
+        form.dataset.bound = '1';
+    }
+
+    function sendChatMessage() {
+        const input = document.getElementById('mp-chat-input');
+        if (!input) return;
+        const raw = String(input.value || '').trim();
+        if (!raw) return;
+        // 過濾控制字元 + 截斷長度
+        const text = raw.replace(/[\x00-\x1f\x7f]/g, '').slice(0, CHAT_MAX_LEN);
+        if (!text) return;
+        if (!window.Multiplayer.isConnected()) {
+            appendChatMessage({ system: true, text: '尚未連線, 無法送訊息' });
+            return;
+        }
+        const msg = {
+            type: 'chat',
+            slot: game.mp.mySlot,
+            name: game.mp.myName,
+            text: text,
+            t: Date.now()
+        };
+        window.Multiplayer.send(msg);
+        // 自己也顯示一次 (網路送出端不會收到自己的訊息)
+        appendChatMessage({ name: game.mp.myName, slot: game.mp.mySlot, text: text, self: true });
+        input.value = '';
+    }
+
+    /** 安全: 用 textContent 組裝 DOM, 完全避開 innerHTML, 徹底防 XSS */
+    function appendChatMessage(msg) {
+        const log = document.getElementById('mp-chat-log');
+        if (!log) return;
+        const row = document.createElement('div');
+        row.className = 'mp-chat-msg' + (msg.self ? ' self' : '') + (msg.system ? ' system' : '');
+        if (msg.system) {
+            row.textContent = '— ' + msg.text + ' —';
+        } else {
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'mp-chat-name';
+            nameSpan.textContent = (msg.name || ('P' + (msg.slot != null ? msg.slot : '?'))) + ':';
+            const textSpan = document.createElement('span');
+            textSpan.className = 'mp-chat-text';
+            textSpan.textContent = ' ' + msg.text;
+            row.appendChild(nameSpan);
+            row.appendChild(textSpan);
+        }
+        log.appendChild(row);
+        while (log.children.length > CHAT_MAX_MESSAGES) log.removeChild(log.firstChild);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function clearChat() {
+        const log = document.getElementById('mp-chat-log');
+        if (log) log.innerHTML = '';
+    }
+
     // ==== 多人對戰 ====
     function openMpLobby() {
         window.UI.showScreen('mp-lobby');
         document.getElementById('mp-status').classList.add('hidden');
         document.getElementById('mp-code-input').value = '';
-        // 依模式更新標題
+        initChat();
+        clearChat();
         const titleEl = document.getElementById('mp-lobby-title');
         if (titleEl) {
             titleEl.textContent = (game.mp.teamMode === '2v2' ? '2v2' : '1v1') + ' 連線對戰';
@@ -1605,16 +1674,22 @@
         window.Multiplayer.on('close', (conn) => {
             // 2v2: 單一訪客離線時, 若房主在等待大廳, 只更新 UI 不結束
             if (window.Multiplayer.isHost() && !game.mp.active) {
-                // 從 players 移除對應的 slot
                 const peerId = conn && conn.peer;
+                let leftName = null;
                 for (const s in game.mp.players) {
                     if (game.mp.players[s].connId === peerId) {
+                        leftName = game.mp.players[s].name || 'P' + s;
                         delete game.mp.players[s];
                         break;
                     }
                 }
                 broadcastLobby();
                 updateRoomUI();
+                if (leftName) {
+                    const msg = leftName + ' 離開房間';
+                    appendChatMessage({ system: true, text: msg });
+                    window.Multiplayer.send({ type: 'chat', system: true, text: msg, t: Date.now() });
+                }
                 return;
             }
             if (game.mp.active) {
@@ -1665,6 +1740,7 @@
         game.mp.active = false;
         game.mp.paused = false;
         stopPingLoop();
+        clearChat();
         document.getElementById('mp-result').classList.add('hidden');
         document.getElementById('mp-pause-menu').classList.add('hidden');
         window.UI.showScreen('mp-mode-select');
@@ -1925,6 +2001,19 @@
                 }
                 renderRoomSlots();
                 break;
+            case 'chat': {
+                if (!data.text) break;
+                const cleanText = String(data.text).replace(/[\x00-\x1f\x7f]/g, '').slice(0, CHAT_MAX_LEN);
+                if (!cleanText) break;
+                if (data.system) {
+                    appendChatMessage({ system: true, text: cleanText });
+                } else {
+                    const cleanName = String(data.name || 'P' + (data.slot != null ? data.slot : '?'))
+                        .replace(/[\x00-\x1f\x7f]/g, '').slice(0, 12);
+                    appendChatMessage({ name: cleanName, slot: data.slot, text: cleanText });
+                }
+                break;
+            }
             case 'ping':
                 // 對方 ping 我 → 回傳 pong 帶上原 timestamp
                 window.Multiplayer.send({ type: 'pong', t: data.t });
@@ -1959,6 +2048,10 @@
                 game.mp.players[slot].name = cleanName || ('P' + slot);
                 broadcastLobby();
                 renderRoomSlots();
+                // 系統訊息: 通知大廳有玩家加入
+                const joinMsg = cleanName + ' 加入房間';
+                appendChatMessage({ system: true, text: joinMsg });
+                window.Multiplayer.send({ type: 'chat', system: true, text: joinMsg, t: Date.now() });
                 break;
             }
             case 'teamSwap':
