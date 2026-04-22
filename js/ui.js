@@ -636,14 +636,48 @@
         document.getElementById('shop-gold-amount').textContent = state.gold;
 
         const spellGrid = document.getElementById('shop-spells');
-        spellGrid.innerHTML = '';
+        const upGrid = document.getElementById('shop-upgrades');
+
+        // 已建立 → 原地更新, 不重建
+        if (spellGrid.children.length > 0) {
+            spellGrid.querySelectorAll('.shop-card').forEach(card => {
+                const key = card.dataset.spellKey;
+                if (!key) return;
+                const item = SHOP_SPELLS.find(i => i.key === key);
+                if (!item) return;
+                const owned = !!(state.shopPurchased && state.shopPurchased[key]);
+                const canAfford = state.gold >= item.cost;
+                card.classList.toggle('owned', owned);
+                card.classList.toggle('locked', !owned && !canAfford);
+                const priceEl = card.querySelector('.shop-price');
+                if (priceEl) priceEl.textContent = owned ? '✓ 已擁有' : item.cost + ' G';
+            });
+            upGrid.querySelectorAll('.shop-card').forEach(card => {
+                const key = card.dataset.upgradeKey;
+                if (!key) return;
+                const item = SHOP_UPGRADES.find(i => i.key === key);
+                if (!item) return;
+                const lvl = (state.statUpgrades && state.statUpgrades[key]) || 0;
+                const maxed = lvl >= item.max;
+                const canAfford = state.gold >= item.cost;
+                card.classList.toggle('owned', maxed);
+                card.classList.toggle('locked', !maxed && !canAfford);
+                const lvlEl = card.querySelector('.shop-level');
+                if (lvlEl) lvlEl.textContent = '等級 ' + lvl + '/' + item.max;
+                const priceEl = card.querySelector('.shop-price');
+                if (priceEl) priceEl.textContent = maxed ? '✓ 已滿級' : item.cost + ' G';
+            });
+            return;
+        }
+
+        // 首次建立
         for (const item of SHOP_SPELLS) {
             const cfg = global.Spells.CONFIG[item.key];
             const owned = !!(state.shopPurchased && state.shopPurchased[item.key]);
             const canAfford = state.gold >= item.cost;
             const card = document.createElement('div');
             card.className = 'shop-card' + (owned ? ' owned' : (canAfford ? '' : ' locked'));
-            // canvas
+            card.dataset.spellKey = item.key;
             const cv = document.createElement('canvas');
             cv.width = 70; cv.height = 70;
             drawTemplate(cv, global.Recognizer.getTemplate(item.key), cfg.color);
@@ -656,20 +690,21 @@
             `;
             card.appendChild(cv);
             card.appendChild(info);
-            if (!owned && canAfford) {
-                card.addEventListener('click', () => onBuySpell(item.key, item.cost));
-            }
+            // 事件掛在 card, handler 以當前狀態判斷
+            card.addEventListener('click', () => {
+                if (card.classList.contains('owned') || card.classList.contains('locked')) return;
+                onBuySpell(item.key, item.cost);
+            });
             spellGrid.appendChild(card);
         }
 
-        const upGrid = document.getElementById('shop-upgrades');
-        upGrid.innerHTML = '';
         for (const item of SHOP_UPGRADES) {
             const lvl = (state.statUpgrades && state.statUpgrades[item.key]) || 0;
             const maxed = lvl >= item.max;
             const canAfford = state.gold >= item.cost;
             const card = document.createElement('div');
             card.className = 'shop-card' + (maxed ? ' owned' : (canAfford ? '' : ' locked'));
+            card.dataset.upgradeKey = item.key;
             card.innerHTML = `
                 <div class="shop-icon">${item.icon}</div>
                 <div class="shop-info">
@@ -679,14 +714,23 @@
                     <div class="shop-price">${maxed ? '✓ 已滿級' : item.cost + ' G'}</div>
                 </div>
             `;
-            if (!maxed && canAfford) {
-                card.addEventListener('click', () => onBuyUpgrade(item.key, item.cost));
-            }
+            card.addEventListener('click', () => {
+                if (card.classList.contains('owned') || card.classList.contains('locked')) return;
+                onBuyUpgrade(item.key, item.cost);
+            });
             upGrid.appendChild(card);
         }
     }
 
+    function clearShopGrid() {
+        const g1 = document.getElementById('shop-spells');
+        const g2 = document.getElementById('shop-upgrades');
+        if (g1) g1.innerHTML = '';
+        if (g2) g2.innerHTML = '';
+    }
+
     UI.buildShop = buildShop;
+    UI.clearShopGrid = clearShopGrid;
     UI.SHOP_SPELLS = SHOP_SPELLS;
     UI.SHOP_UPGRADES = SHOP_UPGRADES;
 
@@ -765,13 +809,41 @@
         document.getElementById('skills-earned').textContent = state.earned;
 
         const grid = document.getElementById('skills-grid');
-        grid.innerHTML = '';
+
+        // 已存在卡片 → 原地更新 (不重建 DOM, 不閃爍)
+        if (grid.children.length > 0) {
+            const cards = grid.querySelectorAll('.skill-card');
+            cards.forEach(card => {
+                const key = card.dataset.rune;
+                if (!key) return;
+                const cfg = global.Spells.CONFIG[key];
+                const lv = state.runeLevels[key] || 1;
+                const unlocked = state.isUnlocked(key);
+                card.classList.toggle('locked', !unlocked);
+                const nameEl = card.querySelector('.skill-name');
+                if (nameEl) {
+                    nameEl.innerHTML = cfg.name + (unlocked ? '' : ' <span class="skill-locked">(未解鎖)</span>');
+                }
+                const starsEl = card.querySelector('.skill-stars');
+                if (starsEl) starsEl.textContent = '★'.repeat(lv) + '☆'.repeat(5 - lv);
+                const lvLblEl = card.querySelector('.skill-lvl');
+                if (lvLblEl) lvLblEl.textContent = 'Lv.' + lv;
+                const minusBtn = card.querySelector('.skill-btn.minus');
+                if (minusBtn) minusBtn.disabled = lv <= 1 || !unlocked;
+                const plusBtn = card.querySelector('.skill-btn.plus');
+                if (plusBtn) plusBtn.disabled = lv >= 5 || state.available <= 0 || !unlocked;
+            });
+            return;
+        }
+
+        // 首次建立
         for (const key in global.Spells.CONFIG) {
             const cfg = global.Spells.CONFIG[key];
             const lv = state.runeLevels[key] || 1;
             const unlocked = state.isUnlocked(key);
             const card = document.createElement('div');
             card.className = 'skill-card' + (unlocked ? '' : ' locked');
+            card.dataset.rune = key;
             const cv = document.createElement('canvas');
             cv.width = 64; cv.height = 64;
             drawTemplate(cv, global.Recognizer.getTemplate(key), cfg.color);
@@ -783,7 +855,6 @@
                 <div class="skill-stars">${stars}</div>
                 <div class="skill-desc">${cfg.description}</div>
             `;
-            // +/- 控制
             const ctrl = document.createElement('div');
             ctrl.className = 'skill-ctrl';
             const minusBtn = document.createElement('button');
@@ -809,7 +880,14 @@
         }
     }
 
+    // 離開技能頁面時呼叫, 清空讓下次進入重新建立
+    function clearSkillsGrid() {
+        const grid = document.getElementById('skills-grid');
+        if (grid) grid.innerHTML = '';
+    }
+
     UI.buildSkills = buildSkills;
+    UI.clearSkillsGrid = clearSkillsGrid;
 
     // ==== 操作提示 ====
     function showControlsHint(show) {

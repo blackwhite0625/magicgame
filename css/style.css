@@ -101,11 +101,12 @@ html, body {
     100% { opacity: 1; transform: translateY(0); }
 }
 
-.codex-card:not(.codex-locked), .skill-card:not(.locked),
-.shop-card:not(.owned):not(.locked), .level-card:not(.locked),
-.upgrade-card:not(.maxed), .loadout-card {
+/* 進場動畫只用於「一次性建立」的頁面 — 避免互動頁面每次刷新都重播 */
+.codex-card:not(.codex-locked),
+.level-card:not(.locked) {
     animation: cardShimmer 0.4s cubic-bezier(0.2, 0.8, 0.3, 1.1) both;
 }
+/* 互動頁面 (skill/shop/loadout/upgrade): 只保留 hover, 不進場動畫 */
 .codex-card, .skill-card, .shop-card, .level-card, .upgrade-card, .loadout-card {
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
