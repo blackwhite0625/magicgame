@@ -5,6 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="魔法符文對戰 — 繪製符文施放魔法的網頁遊戲 (Mac / Windows 皆可遊玩)">
     <meta name="theme-color" content="#4422aa">
+
+    <!-- 安全性: Content Security Policy -->
+    <!-- 限制資源來源, 禁止外部 inline script, 防止 XSS / clickjacking -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' https://unpkg.com;
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: blob:;
+        font-src 'self' data:;
+        connect-src 'self' wss: ws: https:;
+        media-src 'self' blob:;
+        frame-ancestors 'none';
+        base-uri 'self';
+        form-action 'self';
+        object-src 'none';
+        upgrade-insecure-requests;
+    ">
+    <!-- 其他安全標頭 -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=(), payment=()">
+
     <title>魔法符文對戰 · Magic Runes</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
     <link rel="alternate icon" href="assets/favicon.svg">
@@ -364,13 +386,13 @@
 
     <!-- PeerJS (WebRTC P2P 信令) 用於多人連線; 僅在使用多人時才會真正建立連線 -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="js/particles.js?v=21"></script>
-    <script src="js/recognizer.js?v=21"></script>
-    <script src="js/spells.js?v=21"></script>
-    <script src="js/enemies.js?v=21"></script>
-    <script src="js/maps.js?v=21"></script>
-    <script src="js/multiplayer.js?v=21"></script>
-    <script src="js/ui.js?v=21"></script>
-    <script src="js/main.js?v=21"></script>
+    <script src="js/particles.js?v=22"></script>
+    <script src="js/recognizer.js?v=22"></script>
+    <script src="js/spells.js?v=22"></script>
+    <script src="js/enemies.js?v=22"></script>
+    <script src="js/maps.js?v=22"></script>
+    <script src="js/multiplayer.js?v=22"></script>
+    <script src="js/ui.js?v=22"></script>
+    <script src="js/main.js?v=22"></script>
 </body>
 </html>

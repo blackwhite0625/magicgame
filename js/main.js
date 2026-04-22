@@ -173,6 +173,18 @@
         }
     }
 
+    // ==== 安全: HTML 跳脫 (防止 XSS) ====
+    // 任何來自網路或使用者輸入的字串, 寫入 innerHTML 前必須透過此函式
+    function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
     function saveProgress() {
         try {
             localStorage.setItem('magicRunes.runeLevels', JSON.stringify(game.runeLevels));
@@ -1317,14 +1329,18 @@
                 break;
             }
             case 'summon': {
-                // 召喚 2~3 個魔靈繞玩家散開, 自行尋敵攻擊
-                const count = cfg.summonCount + (hi ? 1 : 0) + (max ? 1 : 0);
+                const isPvP = game.state === 'pvp' && game.mp && game.mp.active;
+                // PvP 平衡: 只召喚 1 隻, 傷害 40%, HP 60%, 時限 70%
+                const count = isPvP ? 1 : (cfg.summonCount + (hi ? 1 : 0) + (max ? 1 : 0));
+                const dmg   = isPvP ? cfg.summonDamage * 0.4 : cfg.summonDamage;
+                const hp    = isPvP ? Math.round(cfg.summonHp * 0.6) : cfg.summonHp;
+                const life  = isPvP ? cfg.summonLife * 0.7 : cfg.summonLife;
                 for (let i = 0; i < count; i++) {
                     const a = (i / count) * Math.PI * 2 + Math.random() * 0.3;
                     spawnAlly(
                         p.x + Math.cos(a) * 60,
                         p.y + Math.sin(a) * 60,
-                        cfg.summonHp, cfg.summonDamage, cfg.summonLife
+                        hp, dmg, life
                     );
                 }
                 window.Particles.burst(p.x, p.y, {
@@ -1764,7 +1780,7 @@
                 (s.isSelf ? ' self' : '');
             card.innerHTML = `
                 <div class="mp-card-slot">Slot ${s.slot}${s.isHost ? ' · 房主' : ''}</div>
-                <div class="mp-card-name">${s.name}</div>
+                <div class="mp-card-name">${escapeHtml(s.name)}</div>
                 <div class="mp-card-status">${s.connected ? '✓ 就緒' : '等待中'}</div>
             `;
             // 房主可按 slot 來交換隊伍 (只對已連線的, 不是空位)
@@ -1835,21 +1851,36 @@
         const mp = game.mp;
         switch (data.type) {
             case 'config':
-                mp.mapId = data.mapId;
-                mp.rounds = data.rounds;
-                document.getElementById('mp-opp-slot').querySelector('.mp-slot-status').textContent = '房主已設定';
+                // 安全: 僅接受已知地圖 ID 和合理回合數
+                if (data.mapId && window.Maps && window.Maps.MAPS && window.Maps.MAPS[data.mapId]) {
+                    mp.mapId = data.mapId;
+                }
+                {
+                    const r = parseInt(data.rounds, 10);
+                    if ([1, 3, 5, 7].indexOf(r) >= 0) mp.rounds = r;
+                }
+                {
+                    const el = document.getElementById('mp-opp-slot');
+                    if (el) el.querySelector('.mp-slot-status').textContent = '房主已設定';
+                }
                 break;
-            case 'assignSlot':
-                // 訪客收到自己的 slot 與隊伍
-                mp.mySlot = data.slot;
-                mp.myTeam = data.team;
-                mp.teamMode = data.teamMode || '1v1';
-                mp.mapId = data.mapId || mp.mapId;
-                mp.rounds = data.rounds || mp.rounds;
-                // 回覆房主自己的名稱 (附上 slot 以便比對)
-                window.Multiplayer.send({ type: 'hello', name: game.mp.myName, slot: mp.mySlot });
+            case 'assignSlot': {
+                // 安全: 驗證 slot / team / teamMode / rounds
+                const s = parseInt(data.slot, 10);
+                const t = parseInt(data.team, 10);
+                if (s < 0 || s > 3 || !(t === 0 || t === 1)) break;
+                mp.mySlot = s;
+                mp.myTeam = t;
+                mp.teamMode = (data.teamMode === '2v2' ? '2v2' : '1v1');
+                if (data.mapId && window.Maps && window.Maps.MAPS && window.Maps.MAPS[data.mapId]) {
+                    mp.mapId = data.mapId;
+                }
+                const r = parseInt(data.rounds, 10);
+                if ([1, 3, 5, 7].indexOf(r) >= 0) mp.rounds = r;
+                window.Multiplayer.send({ type: 'hello', name: String(game.mp.myName || '').slice(0, 12), slot: mp.mySlot });
                 renderRoomSlots();
                 break;
+            }
             case 'lobby':
                 // 訪客收到完整 lobby 組成 (包含房主 slot 0)
                 mp.teamMode = data.teamMode || mp.teamMode;
@@ -1891,16 +1922,20 @@
                     }
                 }
                 break;
-            case 'hello':
-                // 訪客連線後送上名稱與自己的 slot; 房主更新並廣播
-                if (game.mp.isHost && data.name && data.slot !== undefined) {
-                    if (game.mp.players[data.slot]) {
-                        game.mp.players[data.slot].name = String(data.name).slice(0, 12);
-                        broadcastLobby();
-                        renderRoomSlots();
-                    }
-                }
+            case 'hello': {
+                if (!game.mp.isHost) break;
+                const slot = parseInt(data.slot, 10);
+                if (slot < 1 || slot > 3) break;
+                if (!game.mp.players[slot]) break;
+                // 安全: 限制名稱長度 + 移除控制字元
+                const cleanName = String(data.name || 'P' + slot)
+                    .replace(/[\x00-\x1f\x7f]/g, '')
+                    .slice(0, 12);
+                game.mp.players[slot].name = cleanName || ('P' + slot);
+                broadcastLobby();
+                renderRoomSlots();
                 break;
+            }
             case 'teamSwap':
                 // 房主改變某 slot 的隊伍
                 if (data.slot === mp.mySlot) {
@@ -1947,9 +1982,13 @@
             case 'hit': {
                 if (!mp.active) break;
                 if (mp.teamMode === '2v2' && data.target !== undefined && data.target !== mp.mySlot) break;
-                const hx = data.nx !== undefined ? data.nx * cachedSize.w : data.x;
-                const hy = data.ny !== undefined ? data.ny * cachedSize.h : data.y;
-                onPlayerHit(data.damage, { kind: data.spell, x: hx, y: hy });
+                // 安全: 限制傷害範圍, 防止被惡意對手傳來 999999 秒殺
+                const rawDmg = Number(data.damage);
+                if (!isFinite(rawDmg) || rawDmg <= 0) break;
+                const dmg = Math.min(100, rawDmg);   // 單擊上限 100
+                const hx = data.nx !== undefined ? Math.max(0, Math.min(1, Number(data.nx) || 0)) * cachedSize.w : 0;
+                const hy = data.ny !== undefined ? Math.max(0, Math.min(1, Number(data.ny) || 0)) * cachedSize.h : 0;
+                onPlayerHit(dmg, { kind: data.spell, x: hx, y: hy });
                 break;
             }
             case 'roundOver':
