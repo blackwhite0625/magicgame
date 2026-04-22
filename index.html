@@ -15,6 +15,21 @@
         <!-- 主選單 -->
         <div id="main-menu" class="screen active">
             <div class="menu-bg-runes"></div>
+            <!-- 浮動符文背景 (純視覺) -->
+            <div class="floating-runes" aria-hidden="true">
+                <span class="float-rune" style="left:8%;animation-delay:0s">✦</span>
+                <span class="float-rune" style="left:18%;animation-delay:-4s">⚡</span>
+                <span class="float-rune" style="left:28%;animation-delay:-8s">❄</span>
+                <span class="float-rune" style="left:38%;animation-delay:-12s">☄</span>
+                <span class="float-rune" style="left:48%;animation-delay:-2s">✧</span>
+                <span class="float-rune" style="left:58%;animation-delay:-6s">☆</span>
+                <span class="float-rune" style="left:68%;animation-delay:-10s">✦</span>
+                <span class="float-rune" style="left:78%;animation-delay:-14s">⚡</span>
+                <span class="float-rune" style="left:88%;animation-delay:-3s">❄</span>
+                <span class="float-rune" style="left:93%;animation-delay:-7s">✧</span>
+            </div>
+            <!-- 光暈環繞標題 -->
+            <div class="title-halo" aria-hidden="true"></div>
             <h1 class="game-title">
                 <span class="title-magic">魔法</span><span class="title-rune">符文</span>
                 <div class="title-sub">MAGIC RUNES</div>
@@ -93,12 +108,12 @@
             <!-- 動態玩家容器 (1v1 兩格, 2v2 四格) -->
             <div class="mp-teams-container" id="mp-teams-container">
                 <div class="mp-team-col" id="mp-team-0">
-                    <div class="mp-team-label blue">藍隊</div>
+                    <div class="mp-team-label blue">❄ 藍隊 ❄</div>
                     <div class="mp-team-slots" id="mp-team-0-slots"></div>
                 </div>
                 <div class="mp-vs">VS</div>
                 <div class="mp-team-col" id="mp-team-1">
-                    <div class="mp-team-label red">紅隊</div>
+                    <div class="mp-team-label red">🔥 紅隊 🔥</div>
                     <div class="mp-team-slots" id="mp-team-1-slots"></div>
                 </div>
             </div>
