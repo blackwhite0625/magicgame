@@ -15,7 +15,7 @@
     const MP_REGEN = 8;             // 每秒回復
     const COMBO_TIMEOUT = 3;        // 連擊重置秒數
     const COMBO_DAMAGE_BONUS = 0.1; // 每層 +10% 傷害
-    const MIN_TRAIL_POINTS = 4;     // 最低識別點數 (較寬鬆)
+    const MIN_TRAIL_POINTS = 8;     // 最低識別點數 — 太短的軌跡容易誤判成其他技能
 
     // ==== 遊戲狀態 ====
     const game = {
@@ -956,8 +956,9 @@
             game.comboTimer = 0;
             return;
         }
-        // 歧義檢查: 若最佳與次佳分差太小且整體分數不夠高, 視為失敗
-        if (result.margin !== undefined && result.margin < window.Recognizer.MIN_MARGIN && result.accuracy < 0.78) {
+        // 歧義檢查: 最佳與次佳分差太小 → 兩種符文撞型, 除非準確度非常高否則拒絕
+        // 之前 accuracy < 0.78 太寬鬆, 改為 0.85 — 只有極高精度才容許小 margin
+        if (result.margin !== undefined && result.margin < window.Recognizer.MIN_MARGIN && result.accuracy < 0.85) {
             window.UI.showRecognition(null, 0, false);
             window.UI.playSfx('fail');
             game.combo = 0;
@@ -2214,6 +2215,7 @@
             try { window.UI.playSfx(name); } catch (e) {}
         }
         switch (name) {
+            // ---------- 投射類 ----------
             case 'fireball':
             case 'icespike':
             case 'wind': {
@@ -2225,8 +2227,8 @@
                 break;
             }
             case 'lightning':
+                // 閃電從對手頂部射向我, 傷害由 'hit' 訊息處理
                 window.Spells.createLightning(opp.x, opp.y - 20, me.x, me.y);
-                // 直接收到 hit 訊息時扣血, 這裡僅視覺
                 break;
             case 'meteor': {
                 const mx = data.ntx !== undefined ? data.ntx * cachedSize.w : me.x;
@@ -2234,12 +2236,161 @@
                 window.Spells.scheduleMeteor(mx, my, false);
                 break;
             }
+            // ---------- AOE / 爆發 ----------
             case 'holynova':
                 window.Spells.createShockwave(opp.x, opp.y, 220, '#ffee99', 0.9);
                 window.Particles.burst(opp.x, opp.y, { count: 50, spread: 300, life: 0.9, color: '#ffee99', color2: '#ffffff', size: 5 });
+                // 光柱
+                for (let i = 0; i < 10; i++) {
+                    const a = (i / 10) * Math.PI * 2;
+                    for (let d = 40; d < 220; d += 30) {
+                        window.Particles.spawn({
+                            x: opp.x + Math.cos(a) * d,
+                            y: opp.y + Math.sin(a) * d,
+                            vx: Math.cos(a) * 80, vy: Math.sin(a) * 80,
+                            life: 0.5, size: 4,
+                            color: '#ffff99', color2: '#ffffff', drag: 0.95
+                        });
+                    }
+                }
                 break;
+            case 'groundslam': {
+                // 棕色擴散衝擊波 + 地裂粒子 (視覺, 不做傷害)
+                const r = 200;
+                window.Spells.createShockwave(opp.x, opp.y, r, '#cc8844', 0.7);
+                window.Spells.createShockwave(opp.x, opp.y, r * 1.2, '#ffdd66', 0.85);
+                window.Particles.burst(opp.x, opp.y, {
+                    count: 40, spread: r * 1.4, life: 0.8,
+                    color: '#cc8844', color2: '#ffdd66', size: 5
+                });
+                for (let i = 0; i < 16; i++) {
+                    const a = (i / 16) * Math.PI * 2;
+                    window.Particles.spawn({
+                        x: opp.x, y: opp.y,
+                        vx: Math.cos(a) * 240, vy: Math.sin(a) * 240,
+                        life: 0.6, size: 5,
+                        color: '#aa6633', color2: '#442211',
+                        drag: 0.9, blend: 'source-over'
+                    });
+                }
+                break;
+            }
+            case 'poison': {
+                // 毒霧: 只是視覺, 不產生 poisonField (避免 double-count 傷害)
+                const px = data.ntx !== undefined ? data.ntx * cachedSize.w : me.x;
+                const py = data.nty !== undefined ? data.nty * cachedSize.h : me.y;
+                window.Spells.createShockwave(px, py, 100, '#88dd44', 0.5);
+                window.Particles.burst(px, py, {
+                    count: 30, spread: 220, life: 0.9,
+                    color: '#88dd44', color2: '#2a6a1a', size: 5
+                });
+                // 持續冒泡 2 秒
+                const bubbleTimer = setInterval(() => {
+                    if (!game.mp.active) { clearInterval(bubbleTimer); return; }
+                    for (let i = 0; i < 4; i++) {
+                        const a = Math.random() * Math.PI * 2;
+                        const rr = Math.random() * 90;
+                        window.Particles.spawn({
+                            x: px + Math.cos(a) * rr,
+                            y: py + Math.sin(a) * rr,
+                            vx: 0, vy: -30 - Math.random() * 30,
+                            life: 0.8, size: 4 + Math.random() * 3,
+                            color: '#88dd44', color2: '#2a6a1a', drag: 0.95
+                        });
+                    }
+                }, 120);
+                setTimeout(() => clearInterval(bubbleTimer), 2400);
+                break;
+            }
+            // ---------- 近戰類 ----------
+            case 'slash': {
+                // 對手朝我方向的弧線斬擊
+                const angle = Math.atan2(ty - opp.y, tx - opp.x);
+                const reach = 180;
+                window.Spells.createMeleeArc(opp.x, opp.y, angle, reach, '#ff5577');
+                window.Particles.burst(
+                    opp.x + Math.cos(angle) * reach * 0.7,
+                    opp.y + Math.sin(angle) * reach * 0.7,
+                    { count: 25, spread: 200, life: 0.4, color: '#ff5577', color2: '#ffffff', size: 5 }
+                );
+                break;
+            }
+            case 'blooddrain': {
+                // 紅色弧線 + 從我往施法者拉的血液粒子 (吸血視覺)
+                const angle = Math.atan2(ty - opp.y, tx - opp.x);
+                window.Spells.createMeleeArc(opp.x, opp.y, angle, 150, '#aa1122');
+                // 血液從目標 (tx,ty) 流回施法者
+                for (let s = 0; s < 12; s++) {
+                    const t = s / 12;
+                    window.Particles.spawn({
+                        x: tx + (opp.x - tx) * t,
+                        y: ty + (opp.y - ty) * t,
+                        vx: (opp.x - tx) * 0.6,
+                        vy: (opp.y - ty) * 0.6,
+                        life: 0.5, size: 4,
+                        color: '#ff4466', color2: '#aa1122', drag: 0.9
+                    });
+                }
+                window.Particles.emitHealGlow(opp.x, opp.y);
+                break;
+            }
+            // ---------- 輔助 / 增益 ----------
+            case 'heal': {
+                // 對手治療: 綠光 + 治療粒子
+                window.Particles.emitHealGlow(opp.x, opp.y);
+                window.Spells.createShockwave(opp.x, opp.y, 100, '#aaffaa', 0.6);
+                window.Particles.burst(opp.x, opp.y, {
+                    count: 20, spread: 140, life: 0.7,
+                    color: '#aaffaa', color2: '#ffffff', size: 4
+                });
+                break;
+            }
+            case 'shield': {
+                // 對手護盾: 藍色球體形成動畫
+                window.Particles.emitShieldForm(opp.x, opp.y, 50);
+                window.Spells.createShockwave(opp.x, opp.y, 120, '#88ddff', 0.5);
+                break;
+            }
+            case 'teleport': {
+                // 對手閃現: 舊位置消散 + 新位置出現
+                window.Particles.burst(opp.x, opp.y, {
+                    count: 25, spread: 250, life: 0.5,
+                    color: '#ddccff', color2: '#ffffff', size: 4
+                });
+                // 新位置 = ntx, nty
+                const nx2 = data.ntx !== undefined ? data.ntx * cachedSize.w : opp.x;
+                const ny2 = data.nty !== undefined ? data.nty * cachedSize.h : opp.y;
+                window.Particles.burst(nx2, ny2, {
+                    count: 30, spread: 180, life: 0.6,
+                    color: '#ffffff', color2: '#aa88ff', size: 5
+                });
+                window.Spells.createShockwave(nx2, ny2, 80, '#ddccff', 0.4);
+                break;
+            }
+            case 'summon': {
+                // 魔靈召喚: 紫色爆發 + 衝擊波 + 幽靈符號粒子環
+                window.Particles.burst(opp.x, opp.y, {
+                    count: 45, spread: 280, life: 0.9,
+                    color: '#ccaaff', color2: '#ffffff', size: 5
+                });
+                window.Spells.createShockwave(opp.x, opp.y, 140, '#ccaaff', 0.7);
+                window.Spells.createShockwave(opp.x, opp.y, 80, '#ffffff', 0.5);
+                // 召喚圓環粒子 (模擬魔法陣)
+                for (let i = 0; i < 20; i++) {
+                    const a = (i / 20) * Math.PI * 2;
+                    window.Particles.spawn({
+                        x: opp.x + Math.cos(a) * 70,
+                        y: opp.y + Math.sin(a) * 70,
+                        vx: Math.cos(a) * 40,
+                        vy: Math.sin(a) * 40,
+                        life: 1.0, size: 6,
+                        color: '#bb88ff', color2: '#ffffff', drag: 0.93
+                    });
+                }
+                break;
+            }
             default:
-                // 近戰不發投射物, 只看到對手位置的效果
+                // 未知技能: 通用粒子效果
                 window.Particles.burst(opp.x, opp.y, { count: 20, spread: 150, life: 0.5, color: '#ff99bb', color2: '#ffffff', size: 4 });
         }
     }

@@ -312,32 +312,68 @@
         if (!ctx || bgmNodes || bgmVolume <= 0) return;
 
         const master = ctx.createGain();
-        master.gain.value = bgmVolume * 0.15;
+        master.gain.value = bgmVolume * 0.12;
         master.connect(ctx.destination);
 
-        const notes = [130.81, 155.56, 196.00, 233.08]; // C3, Eb3, G3, Bb3
+        // 改為明亮開闊的 Cmaj9 pad (C4, E4, G4, D5) — 輕鬆不壓抑
+        // 之前是 Cm7 (小七和弦) 聽起來陰鬱
+        const notes = [261.63, 329.63, 392.00, 587.33];
         const oscs = [];
         for (const freq of notes) {
             const o = ctx.createOscillator();
             const g = ctx.createGain();
             o.type = 'sine';
             o.frequency.value = freq;
+            // 每個音獨立的呼吸 LFO, 製造 pad 搖曳感
             const lfo = ctx.createOscillator();
             const lfoGain = ctx.createGain();
-            lfo.frequency.value = 0.2 + Math.random() * 0.3;
-            lfoGain.gain.value = 0.15;
+            lfo.frequency.value = 0.15 + Math.random() * 0.2;
+            lfoGain.gain.value = 0.18;
             lfo.connect(lfoGain).connect(g.gain);
-            g.gain.value = 0.3;
+            g.gain.value = 0.22;
             o.connect(g).connect(master);
             o.start();
             lfo.start();
             oscs.push(o, lfo);
         }
-        bgmNodes = { master, oscs };
+
+        // 上方加一層 C major 五聲音階 bell 音, 每 3-5 秒隨機一個, 輕柔
+        const pentatonic = [523.25, 587.33, 659.25, 783.99, 880.00]; // C5,D5,E5,G5,A5
+        const melodyBus = ctx.createGain();
+        melodyBus.gain.value = 0.35;
+        melodyBus.connect(master);
+
+        const nodes = { master, oscs, melodyBus, melodyTimer: null, stopped: false };
+
+        function scheduleTone() {
+            if (nodes.stopped) return;
+            const now = ctx.currentTime;
+            const freq = pentatonic[Math.floor(Math.random() * pentatonic.length)];
+            const tone = ctx.createOscillator();
+            const env = ctx.createGain();
+            tone.type = 'triangle';  // 三角波比正弦多一點泛音, 像 bell
+            tone.frequency.value = freq;
+            tone.connect(env).connect(melodyBus);
+            env.gain.setValueAtTime(0.0001, now);
+            env.gain.exponentialRampToValueAtTime(0.4, now + 0.2);
+            env.gain.exponentialRampToValueAtTime(0.0001, now + 2.8);
+            tone.start(now);
+            tone.stop(now + 3.0);
+            nodes.melodyTimer = setTimeout(scheduleTone, 2800 + Math.random() * 2800);
+        }
+        // 第一個 bell 音延遲 1.5 秒, 避免音頭太突兀
+        nodes.melodyTimer = setTimeout(scheduleTone, 1500);
+
+        bgmNodes = nodes;
     }
 
     function stopBgm() {
         if (!bgmNodes) return;
+        bgmNodes.stopped = true;
+        if (bgmNodes.melodyTimer) {
+            clearTimeout(bgmNodes.melodyTimer);
+            bgmNodes.melodyTimer = null;
+        }
         bgmNodes.master.gain.value = 0;
         for (const o of bgmNodes.oscs) {
             try { o.stop(); } catch (e) { /* 已停止 */ }
