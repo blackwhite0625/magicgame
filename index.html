@@ -104,6 +104,11 @@
                     <div class="mp-mode-name">組隊對戰</div>
                     <div class="mp-mode-desc">雙人組隊，團隊配合才能致勝</div>
                 </button>
+                <button class="mp-mode-card" data-action="mp-mode-brawl">
+                    <div class="mp-mode-icon">大亂鬥</div>
+                    <div class="mp-mode-name">Brawl FFA</div>
+                    <div class="mp-mode-desc">多人大亂鬥, 死亡 3 秒後復活, 先達擊殺數獲勝</div>
+                </button>
             </div>
             <div class="menu-buttons mp-sub-actions">
                 <button class="menu-btn" data-action="practice">符文練習</button>
@@ -318,6 +323,10 @@
             <!-- MP Ping 顯示 -->
             <div id="mp-ping-display" class="hud hidden">Ping: -- ms</div>
 
+            <!-- 大亂鬥 HUD: 擊殺計分 + 復活倒數 -->
+            <div id="brawl-score" class="hud hidden"></div>
+            <div id="brawl-respawn" class="hud hidden"></div>
+
             <!-- 關卡/分數資訊 -->
             <div id="game-info" class="hud">
                 <div id="level-display">第 1 關</div>
@@ -395,13 +404,13 @@
 
     <!-- PeerJS (WebRTC P2P 信令) 用於多人連線; 僅在使用多人時才會真正建立連線 -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="js/particles.js?v=29"></script>
-    <script src="js/recognizer.js?v=29"></script>
-    <script src="js/spells.js?v=29"></script>
-    <script src="js/enemies.js?v=29"></script>
-    <script src="js/maps.js?v=29"></script>
-    <script src="js/multiplayer.js?v=29"></script>
-    <script src="js/ui.js?v=29"></script>
-    <script src="js/main.js?v=29"></script>
+    <script src="js/particles.js?v=30"></script>
+    <script src="js/recognizer.js?v=30"></script>
+    <script src="js/spells.js?v=30"></script>
+    <script src="js/enemies.js?v=30"></script>
+    <script src="js/maps.js?v=30"></script>
+    <script src="js/multiplayer.js?v=30"></script>
+    <script src="js/ui.js?v=30"></script>
+    <script src="js/main.js?v=30"></script>
 </body>
 </html>

@@ -1158,6 +1158,48 @@ html, body {
 #mp-ping-display.ping-bad     { color: #ff7777; border-color: rgba(220, 120, 130, 0.6); }
 
 /* ============================================
+   大亂鬥 HUD
+   ============================================ */
+#brawl-score {
+    position: absolute;
+    top: 48px;
+    right: 12px;
+    background: rgba(30, 10, 40, 0.78);
+    border: 1px solid rgba(200, 140, 80, 0.5);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #ffcc88;
+    z-index: 15;
+    pointer-events: none;
+    min-width: 120px;
+}
+#brawl-score .brawl-row { padding: 2px 0; }
+#brawl-score .brawl-row b { color: #ffdd55; }
+
+#brawl-respawn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(60, 10, 20, 0.85);
+    border: 2px solid rgba(255, 100, 120, 0.7);
+    padding: 20px 40px;
+    border-radius: 12px;
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #ff8899;
+    z-index: 20;
+    pointer-events: none;
+    text-align: center;
+    animation: brawlRespawnPulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes brawlRespawnPulse {
+    from { transform: translate(-50%, -50%) scale(1); }
+    to { transform: translate(-50%, -50%) scale(1.05); }
+}
+
+/* ============================================
    多人暫停選單
    ============================================ */
 .mp-pause-note {

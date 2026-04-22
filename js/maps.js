@@ -73,6 +73,46 @@
                 { type: 'circle', xP: 0.45, yP: 0.20, rP: 0.08, art: 'lava', passable: true, damage: 12 },
                 { type: 'circle', xP: 0.60, yP: 0.58, rP: 0.08, art: 'lava', passable: true, damage: 12 }
             ]
+        },
+        brawl: {
+            id: 'brawl',
+            name: '混沌戰場',
+            desc: '大亂鬥專用大地圖, 融合草原 / 沼澤 / 火山三種元素, 自由廝殺',
+            palette: {
+                sky: ['#4a3a52', '#6a5a6e'],        // 紫灰色混合天空
+                ground: ['#4a5a3a', '#2a2e1e'],     // 草地 + 暗土
+                accent: '#ff8844'
+            },
+            obstacles: [
+                // ===== 左上: 草原區 (岩石 + 灌木) =====
+                { type: 'circle', xP: 0.12, yP: 0.18, rP: 0.035, art: 'rock' },
+                { type: 'circle', xP: 0.24, yP: 0.12, rP: 0.03, art: 'bush' },
+                { type: 'circle', xP: 0.18, yP: 0.28, rP: 0.03, art: 'bush' },
+                { type: 'rect',   xP: 0.30, yP: 0.22, wP: 0.06, hP: 0.025, art: 'log' },
+                // ===== 右上: 沼澤區 (樹 + 泥灘) =====
+                { type: 'circle', xP: 0.72, yP: 0.15, rP: 0.045, art: 'tree' },
+                { type: 'circle', xP: 0.85, yP: 0.22, rP: 0.04, art: 'tree' },
+                { type: 'circle', xP: 0.78, yP: 0.30, rP: 0.05, art: 'puddle', passable: true },
+                { type: 'rect',   xP: 0.62, yP: 0.28, wP: 0.06, hP: 0.045, art: 'stump' },
+                // ===== 左下: 火山區 (黑岩 + 岩漿) =====
+                { type: 'rect',   xP: 0.12, yP: 0.65, wP: 0.08, hP: 0.06, art: 'blackrock' },
+                { type: 'circle', xP: 0.22, yP: 0.78, rP: 0.045, art: 'blackrock' },
+                { type: 'circle', xP: 0.08, yP: 0.82, rP: 0.055, art: 'lava', passable: true, damage: 10 },
+                // ===== 右下: 混合區 (樹 + 黑岩) =====
+                { type: 'circle', xP: 0.78, yP: 0.72, rP: 0.045, art: 'tree' },
+                { type: 'rect',   xP: 0.68, yP: 0.78, wP: 0.07, hP: 0.05, art: 'blackrock' },
+                { type: 'circle', xP: 0.88, yP: 0.68, rP: 0.04, art: 'rock' },
+                // ===== 中央: 核心交戰區 (樞紐) =====
+                { type: 'circle', xP: 0.48, yP: 0.48, rP: 0.05, art: 'blackrock' },
+                { type: 'circle', xP: 0.40, yP: 0.40, rP: 0.035, art: 'rock' },
+                { type: 'circle', xP: 0.58, yP: 0.56, rP: 0.035, art: 'bush' },
+                // 中央十字岩漿池 — 要走過去的風險點
+                { type: 'circle', xP: 0.50, yP: 0.28, rP: 0.05, art: 'lava', passable: true, damage: 10 },
+                { type: 'circle', xP: 0.50, yP: 0.72, rP: 0.05, art: 'lava', passable: true, damage: 10 },
+                // ===== 邊緣點綴 =====
+                { type: 'circle', xP: 0.04, yP: 0.50, rP: 0.03, art: 'tree' },
+                { type: 'circle', xP: 0.95, yP: 0.48, rP: 0.03, art: 'tree' }
+            ]
         }
     };
 

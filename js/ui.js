@@ -312,72 +312,122 @@
         if (!ctx || bgmNodes || bgmVolume <= 0) return;
 
         const master = ctx.createGain();
-        master.gain.value = bgmVolume * 0.12;
+        master.gain.value = bgmVolume * 0.14;
         master.connect(ctx.destination);
 
-        // 改為明亮開闊的 Cmaj9 pad (C4, E4, G4, D5) — 輕鬆不壓抑
-        // 之前是 Cm7 (小七和弦) 聽起來陰鬱
-        const notes = [261.63, 329.63, 392.00, 587.33];
-        const oscs = [];
-        for (const freq of notes) {
+        // ===== 輕快 BGM: C major 經典和弦進行 C → Am → F → G =====
+        // 每 2 秒換和弦 (BPM ~120, 每小節 2 秒)
+        // 每小節內有節奏: 低音 pulse + 8 分音符 arpeggio + 和弦 pad
+        const BEAT_SEC = 0.5;      // 一拍 0.5 秒 = 120 BPM
+        const BAR_SEC = BEAT_SEC * 4; // 一小節 2 秒
+
+        // 和弦進行: [低音根音, 和弦三音組] 共 4 個和弦
+        const progression = [
+            { root: 130.81, triad: [261.63, 329.63, 392.00] }, // C: C3 / C4 E4 G4
+            { root: 110.00, triad: [220.00, 261.63, 329.63] }, // Am: A2 / A3 C4 E4
+            { root: 174.61, triad: [261.63, 349.23, 440.00] }, // F:  F3 / C4 F4 A4
+            { root: 196.00, triad: [293.66, 392.00, 493.88] }  // G:  G3 / D4 G4 B4
+        ];
+
+        // 三個音響 bus: bass / pad / arp
+        const bassBus = ctx.createGain();
+        const padBus = ctx.createGain();
+        const arpBus = ctx.createGain();
+        bassBus.gain.value = 0.5;
+        padBus.gain.value = 0.28;
+        arpBus.gain.value = 0.32;
+        bassBus.connect(master);
+        padBus.connect(master);
+        arpBus.connect(master);
+
+        const nodes = { master, oscs: [], bassBus, padBus, arpBus, barTimer: null, stopped: false };
+
+        // 播一個短促的 pluck 音 (arp / bass 用)
+        function pluck(bus, freq, when, durSec, type, peakGain) {
+            type = type || 'triangle';
+            peakGain = peakGain || 0.5;
             const o = ctx.createOscillator();
             const g = ctx.createGain();
-            o.type = 'sine';
+            o.type = type;
             o.frequency.value = freq;
-            // 每個音獨立的呼吸 LFO, 製造 pad 搖曳感
-            const lfo = ctx.createOscillator();
-            const lfoGain = ctx.createGain();
-            lfo.frequency.value = 0.15 + Math.random() * 0.2;
-            lfoGain.gain.value = 0.18;
-            lfo.connect(lfoGain).connect(g.gain);
-            g.gain.value = 0.22;
-            o.connect(g).connect(master);
-            o.start();
-            lfo.start();
-            oscs.push(o, lfo);
+            o.connect(g).connect(bus);
+            // ADSR: 20ms attack, 指數 decay 到 durSec
+            g.gain.setValueAtTime(0.0001, when);
+            g.gain.exponentialRampToValueAtTime(peakGain, when + 0.015);
+            g.gain.exponentialRampToValueAtTime(0.0001, when + durSec);
+            o.start(when);
+            o.stop(when + durSec + 0.05);
         }
 
-        // 上方加一層 C major 五聲音階 bell 音, 每 3-5 秒隨機一個, 輕柔
-        const pentatonic = [523.25, 587.33, 659.25, 783.99, 880.00]; // C5,D5,E5,G5,A5
-        const melodyBus = ctx.createGain();
-        melodyBus.gain.value = 0.35;
-        melodyBus.connect(master);
+        // 播一個軟 pad (整個小節長度)
+        function padChord(bus, freqs, when, durSec) {
+            const oscs = [];
+            for (const f of freqs) {
+                const o = ctx.createOscillator();
+                const g = ctx.createGain();
+                o.type = 'sine';
+                o.frequency.value = f;
+                o.connect(g).connect(bus);
+                g.gain.setValueAtTime(0.0001, when);
+                g.gain.linearRampToValueAtTime(0.15, when + 0.2);     // 淡入
+                g.gain.setValueAtTime(0.15, when + durSec - 0.3);
+                g.gain.linearRampToValueAtTime(0.0001, when + durSec); // 淡出避免 click
+                o.start(when);
+                o.stop(when + durSec + 0.05);
+                oscs.push(o);
+            }
+            return oscs;
+        }
 
-        const nodes = { master, oscs, melodyBus, melodyTimer: null, stopped: false };
+        let barIndex = 0;
 
-        function scheduleTone() {
+        function scheduleBar() {
             if (nodes.stopped) return;
+            const chord = progression[barIndex % progression.length];
             const now = ctx.currentTime;
-            const freq = pentatonic[Math.floor(Math.random() * pentatonic.length)];
-            const tone = ctx.createOscillator();
-            const env = ctx.createGain();
-            tone.type = 'triangle';  // 三角波比正弦多一點泛音, 像 bell
-            tone.frequency.value = freq;
-            tone.connect(env).connect(melodyBus);
-            env.gain.setValueAtTime(0.0001, now);
-            env.gain.exponentialRampToValueAtTime(0.4, now + 0.2);
-            env.gain.exponentialRampToValueAtTime(0.0001, now + 2.8);
-            tone.start(now);
-            tone.stop(now + 3.0);
-            nodes.melodyTimer = setTimeout(scheduleTone, 2800 + Math.random() * 2800);
-        }
-        // 第一個 bell 音延遲 1.5 秒, 避免音頭太突兀
-        nodes.melodyTimer = setTimeout(scheduleTone, 1500);
+            const barStart = now + 0.05; // 小小 lookahead 避免 click
 
+            // Bass: 每小節 beat 1 和 beat 3 各一次 (模擬腳鼓)
+            pluck(bassBus, chord.root, barStart + 0 * BEAT_SEC, 0.45, 'sine', 0.6);
+            pluck(bassBus, chord.root, barStart + 2 * BEAT_SEC, 0.45, 'sine', 0.6);
+
+            // Pad: 整個小節
+            padChord(padBus, chord.triad, barStart, BAR_SEC);
+
+            // Arp: 每 8 分音符 (半拍) 一個音, 循環和弦三音 + 高一個八度的根音
+            const arpNotes = [chord.triad[0], chord.triad[1], chord.triad[2], chord.triad[0] * 2];
+            const halfBeat = BEAT_SEC / 2;
+            for (let i = 0; i < 8; i++) {
+                const freq = arpNotes[i % arpNotes.length];
+                pluck(arpBus, freq, barStart + i * halfBeat, 0.3, 'triangle', 0.35);
+            }
+
+            barIndex++;
+            // 排下一小節 (稍微早一點避免 gap)
+            nodes.barTimer = setTimeout(scheduleBar, BAR_SEC * 1000 - 30);
+        }
+
+        scheduleBar();
         bgmNodes = nodes;
     }
 
     function stopBgm() {
         if (!bgmNodes) return;
         bgmNodes.stopped = true;
-        if (bgmNodes.melodyTimer) {
-            clearTimeout(bgmNodes.melodyTimer);
-            bgmNodes.melodyTimer = null;
+        if (bgmNodes.barTimer) {
+            clearTimeout(bgmNodes.barTimer);
+            bgmNodes.barTimer = null;
         }
-        bgmNodes.master.gain.value = 0;
-        for (const o of bgmNodes.oscs) {
-            try { o.stop(); } catch (e) { /* 已停止 */ }
-        }
+        // 淡出避免突然 click
+        try {
+            const ctx = getAudio();
+            if (ctx) {
+                const now = ctx.currentTime;
+                bgmNodes.master.gain.cancelScheduledValues(now);
+                bgmNodes.master.gain.setValueAtTime(bgmNodes.master.gain.value, now);
+                bgmNodes.master.gain.linearRampToValueAtTime(0, now + 0.2);
+            }
+        } catch (e) { /* ignore */ }
         bgmNodes = null;
     }
 

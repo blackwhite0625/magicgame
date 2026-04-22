@@ -78,7 +78,7 @@
         mp: {
             active: false,
             isHost: false,
-            teamMode: '1v1',      // '1v1' | '2v2'
+            teamMode: '1v1',      // '1v1' | '2v2' | 'brawl'
             myName: 'Player',      // 玩家名稱 (可在進入多人前自訂)
             myTeam: 0,             // 我方隊伍 (0 or 1)
             mySlot: 0,             // 在房間內的 slot (0~3)
@@ -99,7 +99,12 @@
             },
             // 2v2 多人: 其他 3 個玩家 (key = slot)
             players: {},           // { 1: {x,y,hp,team,alive,...}, 2: {...}, 3: {...} }
-            sendTimer: 0
+            sendTimer: 0,
+            // ====== 大亂鬥 (brawl) ======
+            brawlKills: {},        // { slot: killCount } — 擊殺計分
+            brawlKillLimit: 5,     // 先達到此擊殺數獲勝
+            respawnTimer: 0,       // 自己的復活倒數 (秒), 0 = 存活
+            respawnMax: 3          // 復活秒數
         }
     };
     const LOADOUT_MAX = 5;
@@ -1501,9 +1506,14 @@
         game.comboTimer = 0;
         if (p.hp <= 0) {
             p.hp = 0;
-            // PvP 模式: 我死了 → 輸這回合, 不要跑單人結算
+            // PvP 模式: 我死了
             if (game.mp && game.mp.active) {
-                localRoundDecided(false);
+                if (game.mp.teamMode === 'brawl') {
+                    // 大亂鬥: 不結束回合, 3 秒後復活
+                    startBrawlRespawn();
+                } else {
+                    localRoundDecided(false);
+                }
             } else {
                 endLevel(false);
             }
@@ -1615,7 +1625,12 @@
         clearChat();
         const titleEl = document.getElementById('mp-lobby-title');
         if (titleEl) {
-            titleEl.textContent = (game.mp.teamMode === '2v2' ? '2v2' : '1v1') + ' 連線對戰';
+            const tm = game.mp.teamMode;
+            let label;
+            if (tm === 'brawl') label = '大亂鬥';
+            else if (tm === '2v2') label = '2v2';
+            else label = '1v1';
+            titleEl.textContent = label + ' 連線對戰';
         }
     }
 
@@ -1723,21 +1738,45 @@
 
     function hostRoom() {
         setupMpHandlers();
-        const capacity = game.mp.teamMode === '2v2' ? 4 : 2;
+        const tm = game.mp.teamMode;
+        const capacity = (tm === '2v2' || tm === 'brawl') ? 4 : 2;
         game.mp.isHost = true;
         game.mp.mySlot = 0;
-        game.mp.myTeam = 0;
+        // brawl 沒有隊伍概念, myTeam 用 slot 代替 (避免與別人相等)
+        game.mp.myTeam = tm === 'brawl' ? 0 : 0;
         game.mp.players = {};
         window.Multiplayer.host((code) => {
             window.UI.showScreen('mp-room');
             document.getElementById('mp-code-display').textContent = code;
-            document.getElementById('mp-room-title').textContent = game.mp.teamMode === '2v2' ? '等待 3 位對手 (2v2)' : '等待對手 (1v1)';
+            let title;
+            if (tm === 'brawl') title = '大亂鬥: 等待對手 (2-4 人)';
+            else if (tm === '2v2') title = '等待 3 位對手 (2v2)';
+            else title = '等待對手 (1v1)';
+            document.getElementById('mp-room-title').textContent = title;
             document.getElementById('mp-host-config').classList.remove('hidden');
             document.getElementById('mp-start-btn').disabled = true;
             const needed = capacity - 1;
-            document.getElementById('mp-start-btn').textContent = `等待 ${needed} 位對手...`;
+            // brawl 只要 1 位即可開戰 (2 人也可玩)
+            if (tm === 'brawl') {
+                document.getElementById('mp-start-btn').textContent = '等待至少 1 位對手...';
+            } else {
+                document.getElementById('mp-start-btn').textContent = `等待 ${needed} 位對手...`;
+            }
             renderRoomSlots();
+            applyBrawlRoomUI(tm === 'brawl');
         }, (err) => showMpStatus('無法開房: ' + err, true), capacity);
+    }
+
+    // 切換房間 UI — brawl 模式隱藏 隊伍分欄 / 回合選擇, 顯示「擊殺數目標: 5」
+    function applyBrawlRoomUI(isBrawl) {
+        const roundsEl = document.getElementById('mp-rounds-select');
+        if (roundsEl && roundsEl.parentElement) {
+            roundsEl.parentElement.style.display = isBrawl ? 'none' : '';
+        }
+        const mapEl = document.getElementById('mp-map-select');
+        if (mapEl && mapEl.parentElement) {
+            mapEl.parentElement.style.display = isBrawl ? 'none' : '';
+        }
     }
 
     function joinRoom(code) {
@@ -1814,13 +1853,18 @@
 
     function updateRoomUI() {
         if (window.Multiplayer.isHost()) {
-            const needed = (game.mp.teamMode === '2v2' ? 4 : 2) - 1;
+            const tm = game.mp.teamMode;
+            // brawl: 2 人就可開戰; 1v1: 需要 1 對手; 2v2: 需要 3 對手
+            let needed;
+            if (tm === 'brawl') needed = 1;
+            else if (tm === '2v2') needed = 3;
+            else needed = 1;
             const have = window.Multiplayer.connectionCount();
             const btn = document.getElementById('mp-start-btn');
             if (btn) {
                 if (have >= needed) {
                     btn.disabled = false;
-                    btn.textContent = '開始對戰';
+                    btn.textContent = tm === 'brawl' ? `開始大亂鬥 (${have + 1} 人)` : '開始對戰';
                 } else {
                     btn.disabled = true;
                     btn.textContent = `等待 ${needed - have} 位對手...`;
@@ -2099,6 +2143,10 @@
                 if (game.mp.isHost) break;
                 mp.mapId = data.mapId || mp.mapId;
                 mp.rounds = data.rounds || mp.rounds;
+                // 房主傳來的 teamMode 覆寫 (大亂鬥用)
+                if (data.teamMode === 'brawl' || data.teamMode === '2v2' || data.teamMode === '1v1') {
+                    mp.teamMode = data.teamMode;
+                }
                 beginMpMatch(false);
                 break;
             case 'state': {
@@ -2133,7 +2181,10 @@
                 break;
             case 'hit': {
                 if (!mp.active) break;
-                if (mp.teamMode === '2v2' && data.target !== undefined && data.target !== mp.mySlot) break;
+                // 2v2 / brawl: 只接受瞄準我 slot 的 hit; 1v1 不帶 target
+                if ((mp.teamMode === '2v2' || mp.teamMode === 'brawl') && data.target !== undefined && data.target !== mp.mySlot) break;
+                // 大亂鬥: 復活期間不接受傷害
+                if (mp.teamMode === 'brawl' && mp.respawnTimer > 0) break;
                 // 安全: 限制傷害範圍, 防止被惡意對手傳來 999999 秒殺
                 const rawDmg = Number(data.damage);
                 if (!isFinite(rawDmg) || rawDmg <= 0) break;
@@ -2141,6 +2192,23 @@
                 const hx = data.nx !== undefined ? Math.max(0, Math.min(1, Number(data.nx) || 0)) * cachedSize.w : 0;
                 const hy = data.ny !== undefined ? Math.max(0, Math.min(1, Number(data.ny) || 0)) * cachedSize.h : 0;
                 onPlayerHit(dmg, { kind: data.spell, x: hx, y: hy });
+                break;
+            }
+            case 'brawlKill': {
+                // 大亂鬥: 同步擊殺計分 (所有人收到同一份更新)
+                if (mp.teamMode !== 'brawl') break;
+                const killer = parseInt(data.killer, 10);
+                const victim = parseInt(data.victim, 10);
+                if (!(killer >= 0 && killer <= 3)) break;
+                mp.brawlKills[killer] = (mp.brawlKills[killer] || 0) + 1;
+                updateBrawlHud();
+                // 若擊殺者非我但達標, 我輸
+                if (killer !== mp.mySlot && mp.brawlKills[killer] >= mp.brawlKillLimit) {
+                    // 找名字
+                    let name = 'P' + killer;
+                    if (mp.players[killer]) name = mp.players[killer].name || name;
+                    setTimeout(() => endMpMatch(name + ' 獲勝! (大亂鬥)'), 1500);
+                }
                 break;
             }
             case 'roundOver':
@@ -2471,7 +2539,15 @@
         game.player.shieldTimer = 0;
         // 自己 slot / team 決定位置
         const is2v2 = mp.teamMode === '2v2';
+        const isBrawl = mp.teamMode === 'brawl';
         const myTeam = mp.myTeam || 0;
+        // brawl: 4 個角落, 依 slot 分配
+        const brawlSpawns = [
+            [0.12, 0.15],  // slot 0: 左上
+            [0.88, 0.15],  // slot 1: 右上
+            [0.12, 0.85],  // slot 2: 左下
+            [0.88, 0.85]   // slot 3: 右下
+        ];
         const spawnPositionsByTeam = is2v2 ? {
             0: [[0.15, 0.35], [0.15, 0.75]],
             1: [[0.85, 0.35], [0.85, 0.75]]
@@ -2479,21 +2555,37 @@
             0: [[0.18, 0.5]],
             1: [[0.82, 0.5]]
         };
-        // 自己位置 — 看 slot 在隊伍內的順序
-        const myPosIdx = Math.floor(mp.mySlot / 2);
-        const myPos = spawnPositionsByTeam[myTeam][myPosIdx] || spawnPositionsByTeam[myTeam][0];
-        game.player.x = size.w * myPos[0];
-        game.player.y = size.h * myPos[1];
-        // 其他玩家位置
-        if (is2v2) {
+        if (isBrawl) {
+            const myPos = brawlSpawns[mp.mySlot] || brawlSpawns[0];
+            game.player.x = size.w * myPos[0];
+            game.player.y = size.h * myPos[1];
+            // 初始化 brawl 計分 + 復活狀態
+            mp.brawlKills = {};
+            mp.respawnTimer = 0;
             for (const s in mp.players) {
                 const p = mp.players[s];
                 p.hp = 100; p.maxHp = 100; p.alive = true; p.hitFlash = 0;
-                const team = p.team;
-                const posIdx = Math.floor(p.slot / 2);
-                const pos = spawnPositionsByTeam[team][posIdx] || spawnPositionsByTeam[team][0];
+                const pos = brawlSpawns[p.slot] || brawlSpawns[0];
                 p.x = size.w * pos[0];
                 p.y = size.h * pos[1];
+            }
+        } else {
+            // 自己位置 — 看 slot 在隊伍內的順序
+            const myPosIdx = Math.floor(mp.mySlot / 2);
+            const myPos = spawnPositionsByTeam[myTeam][myPosIdx] || spawnPositionsByTeam[myTeam][0];
+            game.player.x = size.w * myPos[0];
+            game.player.y = size.h * myPos[1];
+            // 其他玩家位置
+            if (is2v2) {
+                for (const s in mp.players) {
+                    const p = mp.players[s];
+                    p.hp = 100; p.maxHp = 100; p.alive = true; p.hitFlash = 0;
+                    const team = p.team;
+                    const posIdx = Math.floor(p.slot / 2);
+                    const pos = spawnPositionsByTeam[team][posIdx] || spawnPositionsByTeam[team][0];
+                    p.x = size.w * pos[0];
+                    p.y = size.h * pos[1];
+                }
             }
         }
         // 1v1 兼容 opponent
@@ -2525,8 +2617,19 @@
         document.getElementById('highscore-display').classList.add('hidden');
         document.getElementById('level-display').classList.add('hidden');
         document.getElementById('gold-display').classList.add('hidden');
-        // 回合顯示
-        showMpBanner(`第 ${mp.roundNum} 回合  ${mp.myWins}-${mp.oppWins}`, 1.5);
+        // 大亂鬥: 顯示擊殺計分 HUD, 隱藏復活倒數
+        const brawlScoreEl = document.getElementById('brawl-score');
+        const brawlRespawnEl = document.getElementById('brawl-respawn');
+        if (isBrawl) {
+            if (brawlScoreEl) brawlScoreEl.classList.remove('hidden');
+            if (brawlRespawnEl) brawlRespawnEl.classList.add('hidden');
+            updateBrawlHud();
+            showMpBanner(`大亂鬥開始! 先擊殺 ${mp.brawlKillLimit} 位獲勝`, 2.5);
+        } else {
+            if (brawlScoreEl) brawlScoreEl.classList.add('hidden');
+            if (brawlRespawnEl) brawlRespawnEl.classList.add('hidden');
+            showMpBanner(`第 ${mp.roundNum} 回合  ${mp.myWins}-${mp.oppWins}`, 1.5);
+        }
     }
 
     function endMpRound() {
@@ -2548,21 +2651,48 @@
         mp.paused = false;
         stopPingLoop();
         document.getElementById('mp-pause-menu').classList.add('hidden');
+        // 隱藏大亂鬥 HUD
+        const brawlScoreEl = document.getElementById('brawl-score');
+        const brawlRespawnEl = document.getElementById('brawl-respawn');
+        if (brawlScoreEl) brawlScoreEl.classList.add('hidden');
+        if (brawlRespawnEl) brawlRespawnEl.classList.add('hidden');
         game.state = 'menu';
-        const stats = {
-            '最終比數': `${mp.myWins} - ${mp.oppWins}`,
-            '地圖': window.Maps.get(mp.mapId) ? window.Maps.get(mp.mapId).name : '?',
-            '回合制': 'BO' + mp.rounds
-        };
+        let stats;
+        if (mp.teamMode === 'brawl') {
+            const myKills = mp.brawlKills[mp.mySlot] || 0;
+            stats = {
+                '你的擊殺數': myKills,
+                '擊殺目標': mp.brawlKillLimit,
+                '地圖': window.Maps.get(mp.mapId) ? window.Maps.get(mp.mapId).name : '?'
+            };
+            // 列出所有玩家擊殺
+            const ranks = [];
+            ranks.push({ name: '你 (' + (game.mp.myName || 'You') + ')', kills: myKills });
+            for (const s in mp.players) {
+                const p = mp.players[s];
+                ranks.push({ name: p.name || 'P' + s, kills: mp.brawlKills[s] || 0 });
+            }
+            ranks.sort((a, b) => b.kills - a.kills);
+            stats['排行榜'] = ranks.map((r, i) => `${i + 1}. ${r.name}: ${r.kills}`).join(' | ');
+        } else {
+            stats = {
+                '最終比數': `${mp.myWins} - ${mp.oppWins}`,
+                '地圖': window.Maps.get(mp.mapId) ? window.Maps.get(mp.mapId).name : '?',
+                '回合制': 'BO' + mp.rounds
+            };
+        }
         if (reason === 'forfeit' || reason === 'forfeit-opp-leave') stats['結束'] = '對手離線';
         document.getElementById('mp-result-title').textContent = title;
         let html = '';
         for (const k in stats) {
-            html += `<div>${k}: <span class="stat-value">${stats[k]}</span></div>`;
+            // Safe: stats values set locally, not from network (except opponent names which are already escaped upstream)
+            const val = String(stats[k]).replace(/[<>&]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;' })[c]);
+            html += `<div>${k}: <span class="stat-value">${val}</span></div>`;
         }
         document.getElementById('mp-result-stats').innerHTML = html;
         document.getElementById('mp-result').classList.remove('hidden');
-        window.UI.playSfx(mp.myWins > mp.oppWins ? 'victory' : 'defeat');
+        const won = mp.teamMode === 'brawl' ? (mp.brawlKills[mp.mySlot] || 0) >= mp.brawlKillLimit : mp.myWins > mp.oppWins;
+        window.UI.playSfx(won ? 'victory' : 'defeat');
     }
 
     let mpBannerEl = null;
@@ -3264,6 +3394,23 @@
         // bug fix: 暫停時必須真正凍結模擬 (之前只停輸入, 敵人/岩漿/狀態封包仍在跑)
         if (mp.paused) return;
 
+        // 大亂鬥: 復活倒數
+        if (mp.teamMode === 'brawl' && mp.respawnTimer > 0) {
+            mp.respawnTimer -= dt;
+            // 更新復活倒數顯示
+            const respEl = document.getElementById('brawl-respawn');
+            if (respEl) {
+                respEl.classList.remove('hidden');
+                respEl.textContent = '復活倒數: ' + Math.ceil(mp.respawnTimer) + ' 秒';
+            }
+            if (mp.respawnTimer <= 0) {
+                if (respEl) respEl.classList.add('hidden');
+                finishBrawlRespawn();
+            }
+            // 死亡期間不跑玩家更新邏輯 (但依然接收訊息)
+            return;
+        }
+
         // Hitstop
         if (game.hitstopTimer > 0) {
             game.hitstopTimer -= dt;
@@ -3490,14 +3637,18 @@
         };
     }
 
-    // 取得所有敵隊活人 (供投射物碰撞用, 2v2 多個, 1v1 單一)
+    // 取得所有敵隊活人 (供投射物碰撞用)
+    // 1v1: 單一對手; 2v2: 敵隊 2 人; brawl: 所有其他存活玩家
     function getEnemyTargets() {
         const mp = game.mp;
-        if (mp.teamMode === '2v2') {
+        if (mp.teamMode === '2v2' || mp.teamMode === 'brawl') {
             const arr = [];
+            const isFfa = mp.teamMode === 'brawl';
             for (const s in mp.players) {
                 const p = mp.players[s];
-                if (p.team !== mp.myTeam && p.alive && p.hp > 0) {
+                if (!p.alive || p.hp <= 0) continue;
+                // brawl: 所有其他玩家都是敵人; 2v2: 只有敵隊
+                if (isFfa || p.team !== mp.myTeam) {
                     arr.push({
                         x: p.x, y: p.y,
                         radius: 40,
@@ -3516,19 +3667,98 @@
 
     function applyLocalDamageToTarget(target, damage) {
         const mp = game.mp;
-        if (target._slot !== undefined && mp.teamMode === '2v2') {
+        if (target._slot !== undefined && (mp.teamMode === '2v2' || mp.teamMode === 'brawl')) {
             const p = mp.players[target._slot];
             if (p) {
+                const prevHp = p.hp;
                 p.hp = Math.max(0, p.hp - damage);
                 p.hitFlash = 1;
-                if (p.hp <= 0) p.alive = false;
-                checkTeamsAndMaybeEndRound();
+                if (p.hp <= 0 && prevHp > 0) {
+                    p.alive = false;
+                    if (mp.teamMode === 'brawl') {
+                        // 大亂鬥: 我擊殺, 記我的計分 + 廣播
+                        onBrawlKill(mp.mySlot, p.slot);
+                    }
+                }
+                if (mp.teamMode === '2v2') checkTeamsAndMaybeEndRound();
             }
         } else {
             mp.opponent.hp = Math.max(0, mp.opponent.hp - damage);
             mp.opponent.hitFlash = 1;
             if (mp.opponent.hp <= 0 && mp.roundState === 'playing') localRoundDecided(true);
         }
+    }
+
+    // 大亂鬥: 我擊殺一人, 更新計分 + 廣播, 檢查勝利條件
+    function onBrawlKill(killerSlot, victimSlot) {
+        const mp = game.mp;
+        mp.brawlKills[killerSlot] = (mp.brawlKills[killerSlot] || 0) + 1;
+        window.Multiplayer.send({ type: 'brawlKill', killer: killerSlot, victim: victimSlot });
+        updateBrawlHud();
+        const myKills = mp.brawlKills[mp.mySlot] || 0;
+        showMpBanner(`擊殺! ${myKills}/${mp.brawlKillLimit}`, 1.2);
+        // 檢查是否達到擊殺上限
+        if (myKills >= mp.brawlKillLimit) {
+            setTimeout(() => endMpMatch('你贏了! (大亂鬥勝利)'), 1500);
+        }
+    }
+
+    // 大亂鬥: 更新 HUD 擊殺計分
+    function updateBrawlHud() {
+        const mp = game.mp;
+        if (mp.teamMode !== 'brawl') return;
+        const el = document.getElementById('brawl-score');
+        if (!el) return;
+        const myKills = mp.brawlKills[mp.mySlot] || 0;
+        // 顯示所有玩家擊殺數
+        const lines = [`<div class="brawl-row"><b>你:</b> ${myKills}/${mp.brawlKillLimit}</div>`];
+        for (const s in mp.players) {
+            const p = mp.players[s];
+            const k = mp.brawlKills[s] || 0;
+            const nameSafe = String(p.name || ('P' + s)).replace(/[<>&"']/g, '');
+            lines.push(`<div class="brawl-row">${nameSafe}: ${k}</div>`);
+        }
+        el.innerHTML = lines.join('');
+    }
+
+    // 大亂鬥: 我死了 → 啟動 3 秒復活倒數
+    function startBrawlRespawn() {
+        const mp = game.mp;
+        mp.respawnTimer = mp.respawnMax;
+        // 傳送我已死訊息讓其他人知道我不在場
+        window.Multiplayer.send({ type: 'state', slot: mp.mySlot, hp: 0, maxHp: game.player.maxHp,
+            nx: game.player.x / cachedSize.w, ny: game.player.y / cachedSize.h });
+        showMpBanner(`你死了! 3 秒後復活...`, 2.5);
+    }
+
+    function finishBrawlRespawn() {
+        const mp = game.mp;
+        const size = getCanvasSize();
+        // 隨機生點 (4 角之一, 避開當前位置)
+        const spawns = [
+            [0.12, 0.15], [0.88, 0.15],
+            [0.12, 0.85], [0.88, 0.85],
+            [0.5, 0.12], [0.5, 0.88]
+        ];
+        const pick = spawns[Math.floor(Math.random() * spawns.length)];
+        game.player.x = size.w * pick[0];
+        game.player.y = size.h * pick[1];
+        game.player.hp = game.player.maxHp;
+        game.player.mp = game.player.maxMp;
+        game.player.shieldActive = false;
+        game.player.shieldBlocks = 0;
+        game.invulnerableUntil = performance.now() + 1500; // 1.5 秒復活無敵
+        mp.respawnTimer = 0;
+        // 立刻廣播新位置
+        window.Multiplayer.send({
+            type: 'state',
+            slot: mp.mySlot,
+            nx: game.player.x / cachedSize.w,
+            ny: game.player.y / cachedSize.h,
+            hp: game.player.hp,
+            maxHp: game.player.maxHp
+        });
+        showMpBanner('復活!', 1.0);
     }
 
     // 2v2 檢查隊伍全滅
@@ -4168,11 +4398,13 @@
         if (startMpBtn) {
             startMpBtn.addEventListener('click', () => {
                 if (!window.Multiplayer.isConnected()) return;
-                const mapId = document.getElementById('mp-map-select').value;
-                const rounds = parseInt(document.getElementById('mp-rounds-select').value, 10);
+                const isBrawl = game.mp.teamMode === 'brawl';
+                // 大亂鬥: 強制用 brawl 地圖 + rounds=1 (無回合制)
+                const mapId = isBrawl ? 'brawl' : document.getElementById('mp-map-select').value;
+                const rounds = isBrawl ? 1 : parseInt(document.getElementById('mp-rounds-select').value, 10);
                 game.mp.mapId = mapId;
                 game.mp.rounds = rounds;
-                window.Multiplayer.send({ type: 'start', mapId: mapId, rounds: rounds });
+                window.Multiplayer.send({ type: 'start', mapId: mapId, rounds: rounds, teamMode: game.mp.teamMode });
                 window.UI.playSfx('ui');
                 beginMpMatch(true);
             });
@@ -4349,6 +4581,14 @@
             case 'mp-mode-2v2':
                 game.mp.teamMode = '2v2';
                 openMpLobby();
+                break;
+            case 'mp-mode-brawl':
+                // 大亂鬥: 先選技能 → 再進 lobby
+                game.mp.teamMode = 'brawl';
+                game.mp.mapId = 'brawl';
+                game.mp.rounds = 1;  // brawl 沒有回合, 整場比擊殺數
+                // 先開裝備畫面, 確認後進 lobby
+                openLoadout(() => { openMpLobby(); }, true);
                 break;
             case 'mp-leave':
                 leaveMp();
