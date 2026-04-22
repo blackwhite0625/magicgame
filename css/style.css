@@ -101,8 +101,12 @@ html, body {
     100% { opacity: 1; transform: translateY(0); }
 }
 
-.codex-card, .skill-card, .shop-card, .level-card, .upgrade-card, .loadout-card {
+.codex-card:not(.codex-locked), .skill-card:not(.locked),
+.shop-card:not(.owned):not(.locked), .level-card:not(.locked),
+.upgrade-card:not(.maxed), .loadout-card {
     animation: cardShimmer 0.4s cubic-bezier(0.2, 0.8, 0.3, 1.1) both;
+}
+.codex-card, .skill-card, .shop-card, .level-card, .upgrade-card, .loadout-card {
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .codex-card:hover, .skill-card:hover, .shop-card:hover:not(.owned):not(.locked),
@@ -539,8 +543,38 @@ html, body {
 }
 
 .level-card.locked {
-    opacity: 0.4;
-    cursor: not-allowed;
+    opacity: 0.35 !important;
+    cursor: not-allowed !important;
+    filter: grayscale(0.7) brightness(0.55);
+    pointer-events: none;
+    position: relative;
+}
+
+.level-card.locked .level-num,
+.level-card.locked .level-name {
+    color: #6a5a7a;
+    text-shadow: none;
+}
+
+.level-card.locked::after {
+    content: '未解鎖';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-18deg);
+    font-size: 0.85rem;
+    color: #ff9988;
+    letter-spacing: 0.15em;
+    background: rgba(20, 5, 15, 0.85);
+    padding: 3px 12px;
+    border: 1px solid #88334a;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+.level-card.locked:hover {
+    transform: none !important;
+    box-shadow: none !important;
 }
 
 .level-card.boss {
