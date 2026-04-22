@@ -15,37 +15,43 @@
             name: '骷髏戰士',
             color: '#ccccdd',
             hp: 40, radius: 28, baseSpeed: 80,
-            damage: 10, attackRange: 50, attackCooldown: 1.2,
-            reward: 50
+            damage: 13, attackRange: 50, attackCooldown: 1.1,   // +30% damage
+            reward: 50,
+            chargeChance: 0.18,    // 衝鋒機率
+            chargeSpeedMul: 2.4
         },
         assassin: {
             name: '影刺客',
             color: '#552288',
             hp: 28, radius: 24, baseSpeed: 155,
-            damage: 14, attackRange: 55, attackCooldown: 1.0,
-            reward: 90
+            damage: 18, attackRange: 55, attackCooldown: 0.9,   // +29% damage
+            reward: 90,
+            chargeChance: 0.35,
+            chargeSpeedMul: 2.8
         },
         warlock: {
             name: '暗影術士',
             color: '#aa66cc',
             hp: 35, radius: 30, baseSpeed: 40,
-            damage: 8, attackRange: 500, attackCooldown: 2.5,
-            projectileSpeed: 320, reward: 80
+            damage: 10, attackRange: 500, attackCooldown: 2.2,  // +25% damage
+            projectileSpeed: 340, reward: 80,
+            barrageChance: 0.3     // 三連射機率
         },
         gargoyle: {
             name: '石像鬼',
             color: '#886644',
             hp: 70, radius: 36, baseSpeed: 55,
-            damage: 25, attackRange: 450, attackCooldown: 3.5,
+            damage: 32, attackRange: 450, attackCooldown: 3.2,  // +28% damage
             castTime: 1.8, reward: 120
         },
         demon: {
             name: '惡魔領主',
             color: '#cc3344',
             hp: 500, radius: 58, baseSpeed: 50,
-            damage: 20, attackRange: 500, attackCooldown: 2.0,
-            castTime: 1.5, projectileSpeed: 380,
-            reward: 500, boss: true
+            damage: 26, attackRange: 500, attackCooldown: 1.9,  // +30% damage
+            castTime: 1.5, projectileSpeed: 400,
+            reward: 500, boss: true,
+            barrageChance: 0.5     // Boss 很常三連射
         }
     };
 
@@ -498,6 +504,7 @@
             dead: false,
             slowedUntil: 0,
             hitFlash: 0,
+            chargeUntil: 0,
             bobPhase: Math.random() * Math.PI * 2
         };
     }
@@ -520,9 +527,23 @@
                 e.speed = e.baseSpeed;
             }
 
+            // 衝鋒計時器: 時間內速度大幅提升
+            if (e.chargeUntil && now < e.chargeUntil) {
+                e.speed = e.speed * (e.def.chargeSpeedMul || 2.0);
+            } else if (e.chargeUntil) {
+                e.chargeUntil = 0;
+            }
+
             const dx = playerRef.x - e.x;
             const dy = playerRef.y - e.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // 機率觸發衝鋒 (距離中等時, 對近戰型)
+            if (e.def.chargeChance && !e.chargeUntil && dist < 280 && dist > e.def.attackRange + 20) {
+                if (Math.random() < e.def.chargeChance * dt * 3) {
+                    e.chargeUntil = now + 800;  // 0.8 秒衝鋒
+                }
+            }
 
             // 移動邏輯: 接近玩家直到攻擊範圍
             if (dist > e.def.attackRange) {
@@ -576,25 +597,32 @@
     }
 
     function performAttack(e, playerRef, onPlayerHit) {
-        if (e.type === 'skeleton') {
-            // 近戰直接扣血
+        // 近戰型 (skeleton/assassin): 直接扣血 — 進入距離才觸發
+        if (e.type === 'skeleton' || e.type === 'assassin') {
             onPlayerHit(e.def.damage, { kind: 'melee', x: e.x, y: e.y });
-        } else {
-            // 遠程發射投射物
-            const dx = playerRef.x - e.x;
-            const dy = playerRef.y - e.y;
-            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-            const speed = e.def.projectileSpeed || 300;
+            return;
+        }
+        // 遠程型
+        const dx = playerRef.x - e.x;
+        const dy = playerRef.y - e.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const speed = e.def.projectileSpeed || 300;
+        const baseAngle = Math.atan2(dy, dx);
+        // 可能觸發三連射
+        const doBarrage = e.def.barrageChance && Math.random() < e.def.barrageChance;
+        const angleOffsets = doBarrage ? [-0.25, 0, 0.25] : [0];
+        for (const off of angleOffsets) {
+            const a = baseAngle + off;
             enemyProjectiles.push({
-                x: e.x,
-                y: e.y,
-                vx: (dx / len) * speed,
-                vy: (dy / len) * speed,
-                damage: e.def.damage,
+                x: e.x, y: e.y,
+                vx: Math.cos(a) * speed,
+                vy: Math.sin(a) * speed,
+                damage: e.def.damage * (doBarrage ? 0.7 : 1),   // 三連射每發減傷
                 radius: 14,
                 life: 3,
                 source: e.type,
-                heavy: !!e.def.castTime   // 蓄力攻擊標記 (可被護盾擋)
+                heavy: !!e.def.castTime,
+                barrage: doBarrage
             });
         }
     }
@@ -894,8 +922,7 @@
                 w(60, [e('demon', -150), e('demon', 0), e('demon', 150), e('gargoyle', -220), e('gargoyle', 220)]);
                 break;
             default:
-                // 21-50 關: 程序化生成 (使用 levelNum 作為種子確保重現)
-                generateHighLevel(levelNum, spawnX, mid, w, e);
+                generateHighLevel(levelNum, spawnX, mid, w, e, canvasSize);
                 break;
         }
 
@@ -912,25 +939,38 @@
     }
 
     // 程序化生成 21-50 關
-    function generateHighLevel(levelNum, spawnX, mid, w, e) {
+    function generateHighLevel(levelNum, spawnX, mid, w, e, canvasSize) {
         const rand = mkRand(levelNum * 13 + 7);
         const tier = Math.min(5, Math.floor((levelNum - 21) / 5));    // 0~5
         const isBossLv = levelNum % 5 === 0;
+        const W = (canvasSize && canvasSize.w) || 1280;
+        const H = (canvasSize && canvasSize.h) || 720;
+        // tier 1+ (level 26+): 開放 4 面八方進攻
+        const multiSide = tier >= 1;
+        const sidePool = ['right', 'left', 'top', 'bottom'];
+        const randSide = () => sidePool[Math.floor(rand() * sidePool.length)];
+        const randPos = () => {
+            if (!multiSide) return null;
+            return pickSpawnPos(W, H, randSide());
+        };
 
         // 敵種池 — 高關卡都可出現
         const pool = ['skeleton', 'warlock', 'gargoyle', 'assassin'];
         const bossPool = ['demon'];
 
+        const mkSpawn = (type) => {
+            const pos = randPos();
+            return pos ? { type: type, x: pos.x, y: pos.y } : e(type, (rand() - 0.5) * 300);
+        };
+
         if (isBossLv) {
-            // Boss 關: 多隻惡魔 + 小怪支援
-            const demonCount = Math.min(3, 1 + Math.floor(tier / 2));  // 1-3
+            const demonCount = Math.min(3, 1 + Math.floor(tier / 2));
             const demons = [];
             for (let i = 0; i < demonCount; i++) {
-                const dy = (i - (demonCount - 1) / 2) * 150;
-                demons.push(e('demon', dy));
+                if (multiSide) demons.push(mkSpawn('demon'));
+                else demons.push(e('demon', (i - (demonCount - 1) / 2) * 150));
             }
             w(1, demons);
-            // 支援波次: 2-3 波混編
             const supportWaves = 2 + tier;
             let delay = 12;
             for (let i = 0; i < supportWaves; i++) {
@@ -938,25 +978,21 @@
                 const spawns = [];
                 for (let j = 0; j < count; j++) {
                     const t = pool[Math.floor(rand() * pool.length)];
-                    const yRatio = 0.2 + (j + 0.5) / count * 0.6;
-                    spawns.push({ type: t, x: spawnX, y: mid - 200 + yRatio * 400 - 200 });
+                    spawns.push(mkSpawn(t));
                 }
                 w(delay, spawns);
                 delay += 14 + i * 2;
             }
-            // 最終波: 再加惡魔
             if (tier >= 2) {
-                w(delay + 8, [e('demon', -150), e('demon', 150), e('gargoyle')]);
+                w(delay + 8, [mkSpawn('demon'), mkSpawn('demon'), mkSpawn('gargoyle')]);
             }
         } else {
-            // 一般關: 4-5 波, 數量與敵種隨關卡提升
             const waveCount = 4 + Math.min(2, tier);
             let delay = 1;
             for (let i = 0; i < waveCount; i++) {
                 const count = 3 + i + tier;
                 const spawns = [];
                 for (let j = 0; j < count; j++) {
-                    // 後期波次更容易出精英
                     let t;
                     const roll = rand();
                     if (tier >= 2 && i >= waveCount - 1 && roll < 0.25) t = 'gargoyle';
@@ -964,12 +1000,10 @@
                     else if (roll < 0.3) t = 'warlock';
                     else if (roll < 0.55) t = 'assassin';
                     else t = 'skeleton';
-                    const yRatio = 0.2 + (j + 0.5) / count * 0.6;
-                    spawns.push({ type: t, x: spawnX, y: mid - 200 + yRatio * 400 - 200 });
+                    spawns.push(mkSpawn(t));
                 }
-                // 最後一波偶爾加惡魔
                 if (tier >= 3 && i === waveCount - 1 && rand() < 0.4) {
-                    spawns.push(e('demon'));
+                    spawns.push(mkSpawn('demon'));
                 }
                 w(delay, spawns);
                 delay += 7 + Math.floor(rand() * 3);
@@ -994,11 +1028,28 @@
      * @param {{w:number,h:number}} canvasSize
      * @returns {{spawns:Array, difficulty:number, hpMul:number, speedMul:number}}
      */
+    // 隨機從 4 方位挑一個 spawn 位置
+    function pickSpawnPos(W, H, preferredSide) {
+        const sides = ['right', 'left', 'top', 'bottom'];
+        const side = preferredSide || sides[Math.floor(Math.random() * sides.length)];
+        const jitterY = (Math.random() - 0.5) * H * 0.6;
+        const jitterX = (Math.random() - 0.5) * W * 0.6;
+        switch (side) {
+            case 'left':   return { x: 60,      y: H / 2 + jitterY };
+            case 'top':    return { x: W / 2 + jitterX, y: 60 };
+            case 'bottom': return { x: W / 2 + jitterX, y: H - 60 };
+            case 'right':
+            default:       return { x: W - 60,  y: H / 2 + jitterY };
+        }
+    }
+
     function buildInfiniteWave(waveNum, canvasSize) {
         const W = (canvasSize && canvasSize.w) || 1280;
         const H = (canvasSize && canvasSize.h) || 720;
         const spawnX = W - 80;
         const spawns = [];
+        // 波數 5+ 後解鎖 4 面八方進攻
+        const multiSide = waveNum >= 5;
 
         // 難度倍率 — 比之前更陡
         const hpMul = 1 + (waveNum - 1) * 0.12;                       // HP 每波 +12%
@@ -1018,34 +1069,32 @@
         const isBoss = waveNum % 6 === 0;
 
         if (isBoss) {
-            // 第 6, 12, 18... 波出現惡魔
             const demonCount = 1 + Math.min(2, Math.floor(waveNum / 12));
             for (let i = 0; i < demonCount; i++) {
-                const dy = (i - (demonCount - 1) / 2) * 160;
-                spawns.push({ type: 'demon', x: spawnX, y: H * 0.5 + dy });
+                const pos = multiSide ? pickSpawnPos(W, H) : { x: spawnX, y: H * 0.5 + (i - (demonCount - 1) / 2) * 160 };
+                spawns.push({ type: 'demon', x: pos.x, y: pos.y });
             }
-            // 支援小怪
             const support = Math.min(3, Math.floor(waveNum / 5));
             for (let i = 0; i < support; i++) {
                 const t = pool[Math.floor(Math.random() * pool.length)];
-                spawns.push({ type: t, x: spawnX, y: H * (0.2 + Math.random() * 0.6) });
+                const pos = multiSide ? pickSpawnPos(W, H) : { x: spawnX, y: H * (0.2 + Math.random() * 0.6) };
+                spawns.push({ type: t, x: pos.x, y: pos.y });
             }
         } else {
             for (let i = 0; i < baseCount; i++) {
                 let t;
                 const roll = Math.random();
-                // 越後面的波次精英比例越高
                 if (waveNum >= 8 && roll < Math.min(0.35, 0.08 + (waveNum - 8) * 0.02)) t = 'gargoyle';
                 else if (waveNum >= 2 && roll < 0.3) t = 'assassin';
                 else if (waveNum >= 3 && roll < 0.55) t = 'warlock';
                 else t = 'skeleton';
                 if (pool.indexOf(t) < 0) t = 'skeleton';
-                const yRatio = 0.2 + (i + 0.5) / baseCount * 0.6;
-                spawns.push({ type: t, x: spawnX, y: H * yRatio });
+                const pos = multiSide ? pickSpawnPos(W, H) : { x: spawnX, y: H * (0.2 + (i + 0.5) / baseCount * 0.6) };
+                spawns.push({ type: t, x: pos.x, y: pos.y });
             }
-            // 高波偶爾插入惡魔
             if (waveNum >= 10 && waveNum % 3 === 2 && Math.random() < 0.4) {
-                spawns.push({ type: 'demon', x: spawnX, y: H * 0.5 });
+                const pos = multiSide ? pickSpawnPos(W, H) : { x: spawnX, y: H * 0.5 };
+                spawns.push({ type: 'demon', x: pos.x, y: pos.y });
             }
         }
 

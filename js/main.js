@@ -2163,8 +2163,8 @@
             '施法次數': game.spellsCast,
             '平均準確度': avgAcc + '%',
             '最終分數': game.score,
-            '獲得金幣': clearBonus ? (clearBonus + ' 🪙 (+關卡獎勵)') : '0 🪙',
-            '總金幣': game.gold + ' 🪙',
+            '獲得金幣': clearBonus ? (clearBonus + ' G (+關卡獎勵)') : '0 G',
+            '總金幣': game.gold + ' G',
             '用時': timeSec + ' 秒'
         };
         const hasNext = victory && game.level < window.Enemies.TOTAL_LEVELS;
@@ -2599,8 +2599,8 @@
             ctx.lineWidth = 3;
             ctx.font = 'bold 14px Georgia';
             ctx.textAlign = 'center';
-            ctx.strokeText('♦ ' + game.mp.myName, px, py - r * 1.55);
-            ctx.fillText('♦ ' + game.mp.myName, px, py - r * 1.55);
+            ctx.strokeText('[你] ' + game.mp.myName, px, py - r * 1.55);
+            ctx.fillText('[你] ' + game.mp.myName, px, py - r * 1.55);
         }
 
         // 受傷閃白
@@ -3054,8 +3054,8 @@
             ctx.lineWidth = 3;
             ctx.font = 'bold 14px Georgia';
             ctx.textAlign = 'center';
-            ctx.strokeText('⚔ ' + o.name, px, py - r * 1.55);
-            ctx.fillText('⚔ ' + o.name, px, py - r * 1.55);
+            ctx.strokeText('[敵] ' + o.name, px, py - r * 1.55);
+            ctx.fillText('[敵] ' + o.name, px, py - r * 1.55);
         }
         ctx.restore();
     }
@@ -3157,7 +3157,7 @@
         ctx.lineWidth = 3;
         ctx.font = 'bold 13px Georgia';
         ctx.textAlign = 'center';
-        const label = (isEnemy ? '⚔ ' : '♦ ') + (p.name || ('Slot' + p.slot));
+        const label = (isEnemy ? '[敵] ' : '[友] ') + (p.name || ('Slot' + p.slot));
         ctx.strokeText(label, px, barY - 4);
         ctx.fillText(label, px, barY - 4);
         ctx.restore();

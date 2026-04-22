@@ -63,13 +63,13 @@
             <h2 class="screen-title">多人遊戲</h2>
             <div class="mp-mode-grid">
                 <button class="mp-mode-card" data-action="mp-mode-1v1">
-                    <div class="mp-mode-icon">⚔</div>
-                    <div class="mp-mode-name">1v1 對戰</div>
-                    <div class="mp-mode-desc">單挑決鬥，靠技巧打敗對手</div>
+                    <div class="mp-mode-icon">1 vs 1</div>
+                    <div class="mp-mode-name">單挑對戰</div>
+                    <div class="mp-mode-desc">1 對 1 決鬥，靠技巧打敗對手</div>
                 </button>
                 <button class="mp-mode-card" data-action="mp-mode-2v2">
-                    <div class="mp-mode-icon">⚔⚔</div>
-                    <div class="mp-mode-name">2v2 組隊對戰</div>
+                    <div class="mp-mode-icon">2 vs 2</div>
+                    <div class="mp-mode-name">組隊對戰</div>
                     <div class="mp-mode-desc">雙人組隊，團隊配合才能致勝</div>
                 </button>
             </div>
@@ -108,12 +108,12 @@
             <!-- 動態玩家容器 (1v1 兩格, 2v2 四格) -->
             <div class="mp-teams-container" id="mp-teams-container">
                 <div class="mp-team-col" id="mp-team-0">
-                    <div class="mp-team-label blue">❄ 藍隊 ❄</div>
+                    <div class="mp-team-label blue">藍隊</div>
                     <div class="mp-team-slots" id="mp-team-0-slots"></div>
                 </div>
                 <div class="mp-vs">VS</div>
                 <div class="mp-team-col" id="mp-team-1">
-                    <div class="mp-team-label red">🔥 紅隊 🔥</div>
+                    <div class="mp-team-label red">紅隊</div>
                     <div class="mp-team-slots" id="mp-team-1-slots"></div>
                 </div>
             </div>
@@ -167,7 +167,7 @@
         <!-- 商城 -->
         <div id="shop-screen" class="screen">
             <h2 class="screen-title">符文商城</h2>
-            <div id="shop-gold" class="shop-gold">金幣: <span id="shop-gold-amount">0</span> 🪙</div>
+            <div id="shop-gold" class="shop-gold">金幣: <span id="shop-gold-amount">0</span></div>
             <div id="shop-sections">
                 <div class="shop-section">
                     <h3>近戰符文 (解鎖後可使用)</h3>
@@ -262,7 +262,7 @@
             <div id="game-info" class="hud">
                 <div id="level-display">第 1 關</div>
                 <div id="score-display">分數: 0</div>
-                <div id="gold-display">🪙 <span id="gold-amount">0</span></div>
+                <div id="gold-display">金幣: <span id="gold-amount">0</span></div>
                 <div id="wave-display" class="hidden">波次: 1</div>
                 <div id="highscore-display" class="hidden">最高: 0</div>
                 <div id="combo-display" class="hidden">連擊 x<span id="combo-count">1</span></div>
@@ -349,13 +349,13 @@
 
     <!-- PeerJS (WebRTC P2P 信令) 用於多人連線; 僅在使用多人時才會真正建立連線 -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="js/particles.js"></script>
-    <script src="js/recognizer.js"></script>
-    <script src="js/spells.js"></script>
-    <script src="js/enemies.js"></script>
-    <script src="js/maps.js"></script>
-    <script src="js/multiplayer.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/main.js"></script>
+    <script src="js/particles.js?v=12"></script>
+    <script src="js/recognizer.js?v=12"></script>
+    <script src="js/spells.js?v=12"></script>
+    <script src="js/enemies.js?v=12"></script>
+    <script src="js/maps.js?v=12"></script>
+    <script src="js/multiplayer.js?v=12"></script>
+    <script src="js/ui.js?v=12"></script>
+    <script src="js/main.js?v=12"></script>
 </body>
 </html>

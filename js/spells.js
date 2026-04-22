@@ -12,7 +12,7 @@
     const SPELL_CONFIG = {
         fireball: {
             name: '火球',
-            symbol: '🔥',
+            symbol: '',
             color: '#ff6622',
             mpCost: 15,
             cooldown: 2.0,           // 秒
@@ -24,7 +24,7 @@
         },
         lightning: {
             name: '閃電',
-            symbol: '⚡',
+            symbol: '',
             color: '#aaccff',
             mpCost: 20,
             cooldown: 4.0,
@@ -36,7 +36,7 @@
         },
         icespike: {
             name: '冰刺',
-            symbol: '❄️',
+            symbol: '',
             color: '#88ccff',
             mpCost: 10,
             cooldown: 2.0,
@@ -50,7 +50,7 @@
         },
         heal: {
             name: '治療',
-            symbol: '✚',
+            symbol: '',
             color: '#aaffaa',
             mpCost: 30,
             cooldown: 8.0,
@@ -60,7 +60,7 @@
         },
         shield: {
             name: '護盾',
-            symbol: '🛡️',
+            symbol: '',
             color: '#88ddff',
             mpCost: 25,
             cooldown: 10.0,
@@ -70,7 +70,7 @@
         },
         meteor: {
             name: '隕石',
-            symbol: '☄️',
+            symbol: '',
             color: '#ff8844',
             mpCost: 50,
             cooldown: 15.0,
@@ -82,7 +82,7 @@
         },
         wind: {
             name: '風刃',
-            symbol: '🌪️',
+            symbol: '',
             color: '#aaffcc',
             mpCost: 18,
             cooldown: 3.0,
@@ -95,7 +95,7 @@
         },
         poison: {
             name: '毒霧',
-            symbol: '☠️',
+            symbol: '',
             color: '#88dd44',
             mpCost: 28,
             cooldown: 7.0,
@@ -108,7 +108,7 @@
         },
         teleport: {
             name: '閃現',
-            symbol: '✨',
+            symbol: '',
             color: '#ddccff',
             mpCost: 20,
             cooldown: 6.0,
@@ -118,7 +118,7 @@
         },
         holynova: {
             name: '聖光爆',
-            symbol: '✦',
+            symbol: '',
             color: '#ffee99',
             mpCost: 45,
             cooldown: 12.0,
@@ -131,7 +131,7 @@
         // ==== 近戰系 (商城購買) ====
         slash: {
             name: '利刃斬',
-            symbol: '⚔',
+            symbol: '',
             color: '#ff99bb',
             mpCost: 15,
             cooldown: 1.5,
@@ -143,7 +143,7 @@
         },
         groundslam: {
             name: '大地轟擊',
-            symbol: '💥',
+            symbol: '',
             color: '#cc8844',
             mpCost: 35,
             cooldown: 5.0,
@@ -155,7 +155,7 @@
         },
         blooddrain: {
             name: '吸血之觸',
-            symbol: '🩸',
+            symbol: '',
             color: '#aa1122',
             mpCost: 22,
             cooldown: 3.5,

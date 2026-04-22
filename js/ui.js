@@ -487,7 +487,7 @@
             const stars = '★'.repeat(lv) + '☆'.repeat(5 - lv);
             const cdShown = cfg.cooldown ? cfg.cooldown.toFixed(1) + 's' : '-';
             info.innerHTML = `
-                <h3>${cfg.name} ${unlocked ? '' : '<span class="codex-lock-tag">🔒 未解鎖</span>'}</h3>
+                <h3>${cfg.name} ${unlocked ? '' : '<span class="codex-lock-tag">(未解鎖)</span>'}</h3>
                 <div class="codex-stars">${stars}</div>
                 <p>${cfg.description}</p>
                 <p style="color:#ccaaff;margin-top:6px">冷卻: ${cdShown} &nbsp;|&nbsp; MP: ${cfg.mpCost || '-'}</p>
@@ -627,9 +627,9 @@
         { key: 'holynova', cost: 600 }
     ];
     const SHOP_UPGRADES = [
-        { key: 'hp', name: '最大 HP +10', desc: '永久增加生命上限', cost: 80, max: 5, icon: '❤' },
-        { key: 'mp', name: '最大 MP +10', desc: '永久增加魔力上限', cost: 80, max: 5, icon: '💧' },
-        { key: 'mpRegen', name: 'MP 再生 +2/秒', desc: '加快魔力回復速度', cost: 120, max: 4, icon: '✨' }
+        { key: 'hp', name: '最大 HP +10', desc: '永久增加生命上限', cost: 80, max: 5, icon: 'HP' },
+        { key: 'mp', name: '最大 MP +10', desc: '永久增加魔力上限', cost: 80, max: 5, icon: 'MP' },
+        { key: 'mpRegen', name: 'MP 再生 +2/秒', desc: '加快魔力回復速度', cost: 120, max: 4, icon: 'RE' }
     ];
 
     function buildShop(state, onBuySpell, onBuyUpgrade) {
@@ -652,7 +652,7 @@
             info.innerHTML = `
                 <div class="shop-name">${cfg.name}</div>
                 <div class="shop-desc">${cfg.description}</div>
-                <div class="shop-price">${owned ? '✓ 已擁有' : item.cost + ' 🪙'}</div>
+                <div class="shop-price">${owned ? '✓ 已擁有' : item.cost + ' G'}</div>
             `;
             card.appendChild(cv);
             card.appendChild(info);
@@ -676,7 +676,7 @@
                     <div class="shop-name">${item.name}</div>
                     <div class="shop-desc">${item.desc}</div>
                     <div class="shop-level">等級 ${lvl}/${item.max}</div>
-                    <div class="shop-price">${maxed ? '✓ 已滿級' : item.cost + ' 🪙'}</div>
+                    <div class="shop-price">${maxed ? '✓ 已滿級' : item.cost + ' G'}</div>
                 </div>
             `;
             if (!maxed && canAfford) {

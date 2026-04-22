@@ -90,6 +90,67 @@ html, body {
     to { opacity: 1; transform: scale(1); }
 }
 
+/* 通用卡片進場動畫 — 多個子項按序淡入 */
+@keyframes cardFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+}
+
+@keyframes cardShimmer {
+    0%   { opacity: 0; transform: translateY(15px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+.codex-card, .skill-card, .shop-card, .level-card, .upgrade-card, .loadout-card {
+    animation: cardShimmer 0.4s cubic-bezier(0.2, 0.8, 0.3, 1.1) both;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.codex-card:hover, .skill-card:hover, .shop-card:hover:not(.owned):not(.locked),
+.level-card:hover:not(.locked), .upgrade-card:hover:not(.maxed), .loadout-card:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 0 22px rgba(180, 120, 255, 0.45);
+}
+/* 按序延遲 (最多 18 張) */
+.codex-card:nth-child(1), .skill-card:nth-child(1), .shop-card:nth-child(1),
+.level-card:nth-child(1), .upgrade-card:nth-child(1), .loadout-card:nth-child(1) { animation-delay: 0.02s; }
+.codex-card:nth-child(2), .skill-card:nth-child(2), .shop-card:nth-child(2),
+.level-card:nth-child(2), .upgrade-card:nth-child(2), .loadout-card:nth-child(2) { animation-delay: 0.06s; }
+.codex-card:nth-child(3), .skill-card:nth-child(3), .shop-card:nth-child(3),
+.level-card:nth-child(3), .upgrade-card:nth-child(3), .loadout-card:nth-child(3) { animation-delay: 0.10s; }
+.codex-card:nth-child(4), .skill-card:nth-child(4), .shop-card:nth-child(4),
+.level-card:nth-child(4), .upgrade-card:nth-child(4), .loadout-card:nth-child(4) { animation-delay: 0.14s; }
+.codex-card:nth-child(5), .skill-card:nth-child(5), .shop-card:nth-child(5),
+.level-card:nth-child(5), .upgrade-card:nth-child(5), .loadout-card:nth-child(5) { animation-delay: 0.18s; }
+.codex-card:nth-child(n+6), .skill-card:nth-child(n+6), .shop-card:nth-child(n+6),
+.level-card:nth-child(n+6), .upgrade-card:nth-child(n+6), .loadout-card:nth-child(n+6) { animation-delay: 0.22s; }
+
+/* 標題進場動畫 (通用) */
+.screen-title {
+    animation: titleIntro 0.5s ease-out;
+}
+
+/* 返回按鈕 hover */
+.back-btn {
+    transition: all 0.2s ease;
+}
+.back-btn:hover {
+    transform: translateX(-3px);
+    box-shadow: 0 0 12px rgba(180, 120, 255, 0.4);
+}
+
+/* 設定面板 row 進場 */
+.setting-row {
+    animation: cardShimmer 0.4s ease-out both;
+    transition: border-color 0.2s ease;
+}
+.setting-row:hover {
+    border-color: #7a5aad;
+}
+.setting-row:nth-child(1) { animation-delay: 0.05s; }
+.setting-row:nth-child(2) { animation-delay: 0.10s; }
+.setting-row:nth-child(3) { animation-delay: 0.15s; }
+.setting-row:nth-child(4) { animation-delay: 0.20s; }
+
 /* ============================================
    主選單
    ============================================ */
