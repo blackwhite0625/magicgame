@@ -53,13 +53,16 @@
     }
 
     /** 建立房間
-     * @param {number} capacity  房間容量 (1v1=2, 2v2=4)
+     * @param {number} capacity  房間容量 (1v1=2, 2v2=4, 0 或 -1 表示無限)
+     * @param {string} [fixedCode] 指定房號 (大亂鬥 auto-join 用固定 ID)
      */
-    function host(onCodeReady, onError, capacity) {
+    function host(onCodeReady, onError, capacity, fixedCode) {
         cleanup();
         state.isHost = true;
         state.capacity = capacity || 2;
-        state.code = makeCode();
+        // 0 或負值 → 無限 (Infinity)
+        if (state.capacity <= 0) state.capacity = Infinity;
+        state.code = fixedCode || makeCode();
         try {
             state.peer = new Peer(ID_PREFIX + state.code);
         } catch (e) {
@@ -72,7 +75,6 @@
         });
         state.peer.on('connection', (conn) => {
             // 去重: 若同一個 peer 已有舊連線 (刷新 / 重連), 關閉舊的, 保留新的
-            // 這可防止同一個人佔用兩個 slot
             const incomingPeer = conn && conn.peer;
             if (incomingPeer) {
                 for (let i = state.conns.length - 1; i >= 0; i--) {
@@ -83,7 +85,7 @@
                     }
                 }
             }
-            // 房間已滿: 拒絕
+            // 房間已滿: 拒絕 (capacity = Infinity 時永不拒絕)
             if (state.conns.length >= state.capacity - 1) {
                 try { conn.close(); } catch (e) {}
                 return;
@@ -93,7 +95,13 @@
             setupConn(conn, conn);
         });
         state.peer.on('error', (err) => {
+            // 固定 ID 被搶 → 讓呼叫端決定後續 (fallback 到 join)
             if (err && err.type === 'unavailable-id') {
+                if (fixedCode) {
+                    // 大亂鬥模式: 不要 retry, 交給上層切換為 join
+                    if (onError) onError('unavailable-id');
+                    return;
+                }
                 host(onCodeReady, onError, state.capacity);
                 return;
             }
@@ -211,6 +219,8 @@
         getCode: () => state.code,
         getCapacity: () => state.capacity,
         getConnections: () => state.conns,
-        connectionCount: () => state.isHost ? state.conns.length : (state.conn ? 1 : 0)
+        connectionCount: () => state.isHost ? state.conns.length : (state.conn ? 1 : 0),
+        // 公開 ID_PREFIX 常數供外部用於建構固定房號
+        ID_PREFIX: ID_PREFIX
     };
 })(window);

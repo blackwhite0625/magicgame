@@ -1164,18 +1164,42 @@ html, body {
     position: absolute;
     top: 48px;
     right: 12px;
-    background: rgba(30, 10, 40, 0.78);
+    background: rgba(30, 10, 40, 0.82);
     border: 1px solid rgba(200, 140, 80, 0.5);
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 0.85rem;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.88rem;
     color: #ffcc88;
     z-index: 15;
     pointer-events: none;
-    min-width: 120px;
+    min-width: 160px;
+    max-width: 220px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
-#brawl-score .brawl-row { padding: 2px 0; }
-#brawl-score .brawl-row b { color: #ffdd55; }
+#brawl-score .brawl-header {
+    font-size: 0.75rem;
+    color: #ffaa66;
+    border-bottom: 1px solid rgba(200, 140, 80, 0.3);
+    padding-bottom: 4px;
+    margin-bottom: 5px;
+    text-align: center;
+    letter-spacing: 0.05em;
+}
+#brawl-score .brawl-row {
+    padding: 3px 4px;
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#brawl-score .brawl-row.self {
+    background: rgba(255, 200, 100, 0.18);
+    border-radius: 4px;
+    color: #ffdd55;
+    font-weight: 700;
+}
 
 #brawl-respawn {
     position: absolute;
