@@ -71,6 +71,18 @@
             emit('hosting', state.code);
         });
         state.peer.on('connection', (conn) => {
+            // 去重: 若同一個 peer 已有舊連線 (刷新 / 重連), 關閉舊的, 保留新的
+            // 這可防止同一個人佔用兩個 slot
+            const incomingPeer = conn && conn.peer;
+            if (incomingPeer) {
+                for (let i = state.conns.length - 1; i >= 0; i--) {
+                    const existing = state.conns[i];
+                    if (existing && existing.peer === incomingPeer) {
+                        try { existing.close(); } catch (e) {}
+                        state.conns.splice(i, 1);
+                    }
+                }
+            }
             // 房間已滿: 拒絕
             if (state.conns.length >= state.capacity - 1) {
                 try { conn.close(); } catch (e) {}

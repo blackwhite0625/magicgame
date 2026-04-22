@@ -1627,6 +1627,16 @@
         window.Multiplayer.offAll();
         window.Multiplayer.on('open', (conn) => {
             if (window.Multiplayer.isHost()) {
+                // 防重複: 若此 connId (peer id) 已存在於某個 slot, 先移除
+                // 避免刷新 / 重連後同一人佔用兩個 slot
+                const connId = conn && conn.peer ? conn.peer : null;
+                if (connId) {
+                    for (const s in game.mp.players) {
+                        if (game.mp.players[s].connId === connId) {
+                            delete game.mp.players[s];
+                        }
+                    }
+                }
                 // 新加入的訪客 — 指派 slot (1, 2, 3 順序)
                 const usedSlots = new Set([0]);
                 for (const slot in game.mp.players) usedSlots.add(parseInt(slot, 10));
@@ -2052,22 +2062,9 @@
                 const slot = parseInt(data.slot, 10);
                 if (slot < 1 || slot > 3) break;
                 if (!game.mp.players[slot]) break;
-                const rawName = String(data.name || 'P' + slot)
+                const finalName = String(data.name || 'P' + slot)
                     .replace(/[\x00-\x1f\x7f]/g, '')
                     .slice(0, 12) || ('P' + slot);
-                // 自動去重: 若名稱與其他連線玩家相同, 加上 (2) / (3) 後綴
-                const existing = new Set();
-                existing.add(game.mp.myName);
-                for (const s in game.mp.players) {
-                    if (parseInt(s, 10) !== slot) existing.add(game.mp.players[s].name);
-                }
-                let finalName = rawName;
-                let suffix = 2;
-                while (existing.has(finalName)) {
-                    finalName = rawName.slice(0, 8) + ' (' + suffix + ')';
-                    suffix++;
-                    if (suffix > 9) break;
-                }
                 game.mp.players[slot].name = finalName;
                 broadcastLobby();
                 renderRoomSlots();
