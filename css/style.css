@@ -1031,6 +1031,33 @@ html, body {
 }
 
 /* ============================================
+   多人暫停選單
+   ============================================ */
+.mp-pause-note {
+    color: #ffcc66;
+    font-size: 0.85rem;
+    margin-bottom: 18px;
+    padding: 8px 12px;
+    background: rgba(100, 60, 30, 0.3);
+    border: 1px solid #88552a;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+}
+
+.menu-btn.mp-surrender-btn {
+    color: #ff9999;
+    border-color: #aa4466;
+    text-shadow: 0 0 8px #ff4466;
+    background: linear-gradient(180deg, rgba(120, 40, 60, 0.6), rgba(60, 20, 30, 0.8));
+}
+
+.menu-btn.mp-surrender-btn:hover {
+    background: linear-gradient(180deg, rgba(180, 60, 90, 0.7), rgba(100, 30, 45, 0.9));
+    border-color: #ff6688;
+    box-shadow: 0 0 30px rgba(240, 80, 120, 0.6);
+}
+
+/* ============================================
    多人模式選擇
    ============================================ */
 .mp-mode-grid {

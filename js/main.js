@@ -599,6 +599,7 @@
 
     function handlePointerDown(e, target) {
         if (target === 'game' && game.state !== 'playing' && game.state !== 'pvp') return;
+        if (target === 'game' && game.mp && game.mp.active && game.mp.paused) return;
         if (target === 'practice' && practice.state !== 'ready') return;
         e.preventDefault();
         drawing = true;
@@ -671,6 +672,8 @@
     });
 
     function updatePlayerMovement(dt) {
+        // 多人暫停中: 不移動
+        if (game.mp && game.mp.active && game.mp.paused) return false;
         let dx = 0, dy = 0;
         if (keyState['w'] || keyState['arrowup']) dy -= 1;
         if (keyState['s'] || keyState['arrowdown']) dy += 1;
@@ -1458,7 +1461,9 @@
         window.Multiplayer.send({ type: 'leave' });
         window.Multiplayer.disconnect();
         game.mp.active = false;
+        game.mp.paused = false;
         document.getElementById('mp-result').classList.add('hidden');
+        document.getElementById('mp-pause-menu').classList.add('hidden');
         window.UI.showScreen('main-menu');
         window.UI.showControlsHint(false);
     }
@@ -1751,9 +1756,10 @@
                 spawnRemoteCast(data);
                 break;
             case 'hit':
-                if (mp.roundState !== 'playing') break;
-                // 2v2: 只有 data.target 是自己 slot 才吃傷害
-                if (data.target !== undefined && data.target !== mp.mySlot) break;
+                // 只要對戰進行中就接受傷害 (含 countdown 交界瞬間, 避免因同步差異漏傷)
+                if (!mp.active) break;
+                // 2v2 專用: 帶 target 欄位時僅對指定 slot 生效; 1v1 無 target 欄位, 一律吃傷害
+                if (mp.teamMode === '2v2' && data.target !== undefined && data.target !== mp.mySlot) break;
                 onPlayerHit(data.damage, { kind: data.spell, x: data.x, y: data.y });
                 break;
             case 'roundOver':
@@ -1776,6 +1782,15 @@
                 break;
             case 'leave':
                 endMpMatch('對手離開了', 'forfeit');
+                break;
+            case 'surrender':
+                // 對手投降, 我直接贏
+                if (game.mp.active) {
+                    // 填完剩餘獲勝數
+                    const need = Math.ceil(mp.rounds / 2);
+                    mp.myWins = Math.max(mp.myWins, need);
+                    endMpMatch('對手投降了, 你贏了！', 'opp-surrender');
+                }
                 break;
             case 'rematch':
                 // 對方點了返回房間
@@ -1940,6 +1955,8 @@
     function endMpMatch(title, reason) {
         const mp = game.mp;
         mp.active = false;
+        mp.paused = false;
+        document.getElementById('mp-pause-menu').classList.add('hidden');
         game.state = 'menu';
         const stats = {
             '最終比數': `${mp.myWins} - ${mp.oppWins}`,
@@ -3492,6 +3509,24 @@
         if (mapSel) mapSel.addEventListener('change', pushConfig);
         if (roundSel) roundSel.addEventListener('change', pushConfig);
 
+        // 多人暫停選單
+        const mpResume = document.getElementById('mp-resume-btn');
+        const mpSurrender = document.getElementById('mp-surrender-btn');
+        const mpLeaveMatch = document.getElementById('mp-leave-match-btn');
+        if (mpResume) mpResume.addEventListener('click', () => {
+            window.UI.playSfx('ui');
+            toggleMpPause();
+        });
+        if (mpSurrender) mpSurrender.addEventListener('click', () => {
+            window.UI.playSfx('ui');
+            surrenderMp();
+        });
+        if (mpLeaveMatch) mpLeaveMatch.addEventListener('click', () => {
+            window.UI.playSfx('ui');
+            document.getElementById('mp-pause-menu').classList.add('hidden');
+            leaveMp();
+        });
+
         // PvP 編輯出戰符文
         const mpEditLoadout = document.getElementById('mp-edit-loadout');
         if (mpEditLoadout) {
@@ -3577,9 +3612,35 @@
                 } else if (game.state === 'paused') {
                     game.state = 'playing';
                     document.getElementById('pause-menu').classList.add('hidden');
+                } else if (game.state === 'pvp' && game.mp.active) {
+                    toggleMpPause();
                 }
             }
         });
+    }
+
+    function toggleMpPause() {
+        const modal = document.getElementById('mp-pause-menu');
+        if (modal.classList.contains('hidden')) {
+            modal.classList.remove('hidden');
+            game.mp.paused = true;
+        } else {
+            modal.classList.add('hidden');
+            game.mp.paused = false;
+        }
+    }
+
+    function surrenderMp() {
+        if (!game.mp.active) return;
+        // 通知對手
+        window.Multiplayer.send({ type: 'surrender' });
+        // 本地結束: 對手贏
+        const mp = game.mp;
+        const need = Math.ceil(mp.rounds / 2);
+        mp.oppWins = Math.max(mp.oppWins, need);
+        mp.paused = false;
+        document.getElementById('mp-pause-menu').classList.add('hidden');
+        endMpMatch('你投降了...', 'surrender');
     }
 
     function handleAction(action) {

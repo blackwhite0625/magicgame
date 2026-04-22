@@ -143,6 +143,17 @@
             <button class="back-btn" data-action="mp-leave">離開房間</button>
         </div>
 
+        <!-- 多人對戰: 暫停 / 投降 選單 -->
+        <div id="mp-pause-menu" class="modal hidden">
+            <div class="modal-content">
+                <h2>暫停</h2>
+                <div class="mp-pause-note">對戰仍會進行, 建議速戰速決</div>
+                <button class="menu-btn" id="mp-resume-btn">繼續對戰</button>
+                <button class="menu-btn mp-surrender-btn" id="mp-surrender-btn">投降</button>
+                <button class="menu-btn" id="mp-leave-match-btn">離開房間</button>
+            </div>
+        </div>
+
         <!-- 多人對戰結果 -->
         <div id="mp-result" class="modal hidden">
             <div class="modal-content">
@@ -349,13 +360,13 @@
 
     <!-- PeerJS (WebRTC P2P 信令) 用於多人連線; 僅在使用多人時才會真正建立連線 -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="js/particles.js?v=14"></script>
-    <script src="js/recognizer.js?v=14"></script>
-    <script src="js/spells.js?v=14"></script>
-    <script src="js/enemies.js?v=14"></script>
-    <script src="js/maps.js?v=14"></script>
-    <script src="js/multiplayer.js?v=14"></script>
-    <script src="js/ui.js?v=14"></script>
-    <script src="js/main.js?v=14"></script>
+    <script src="js/particles.js?v=15"></script>
+    <script src="js/recognizer.js?v=15"></script>
+    <script src="js/spells.js?v=15"></script>
+    <script src="js/enemies.js?v=15"></script>
+    <script src="js/maps.js?v=15"></script>
+    <script src="js/multiplayer.js?v=15"></script>
+    <script src="js/ui.js?v=15"></script>
+    <script src="js/main.js?v=15"></script>
 </body>
 </html>
