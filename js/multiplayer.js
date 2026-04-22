@@ -40,6 +40,11 @@
         if (!listeners[evt]) return;
         listeners[evt] = listeners[evt].filter(h => h !== fn);
     }
+    // 清除所有 listeners (特定事件或全部) — 避免重複呼叫 setupHandlers 造成事件重複觸發
+    function offAll(evt) {
+        if (evt) delete listeners[evt];
+        else for (const k in listeners) delete listeners[k];
+    }
     function emit(evt) {
         const args = Array.prototype.slice.call(arguments, 1);
         (listeners[evt] || []).forEach(h => {
@@ -188,6 +193,7 @@
         disconnect: disconnect,
         on: on,
         off: off,
+        offAll: offAll,
         isHost: () => state.isHost,
         isConnected: () => state.connected,
         getCode: () => state.code,

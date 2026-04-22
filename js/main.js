@@ -1622,6 +1622,9 @@
     }
 
     function setupMpHandlers() {
+        // 關鍵修正: 重複呼叫 setupMpHandlers 會累加 listeners, 導致每個事件觸發多次
+        // (聊天訊息加倍 / 系統訊息重複都是此 bug)
+        window.Multiplayer.offAll();
         window.Multiplayer.on('open', (conn) => {
             if (window.Multiplayer.isHost()) {
                 // 新加入的訪客 — 指派 slot (1, 2, 3 順序)
@@ -1979,14 +1982,12 @@
                 break;
             }
             case 'lobby':
-                // 訪客收到完整 lobby 組成 (包含房主 slot 0)
                 mp.teamMode = data.teamMode || mp.teamMode;
                 mp.players = {};
                 for (const s in data.players) {
                     const src = data.players[s];
                     const slotNum = parseInt(s, 10);
                     if (slotNum === mp.mySlot) {
-                        // 自己的隊伍可能被房主改過
                         mp.myTeam = src.team;
                         continue;
                     }
@@ -1998,6 +1999,16 @@
                         x: 0, y: 0, hp: 100, maxHp: 100,
                         alive: true, hitFlash: 0, bobPhase: 0
                     };
+                }
+                // 1v1: 也同步對手名字到 mp.opponent (遊戲中名牌顯示會用到)
+                if (mp.teamMode !== '2v2') {
+                    for (const s in data.players) {
+                        const slotNum = parseInt(s, 10);
+                        if (slotNum !== mp.mySlot) {
+                            mp.opponent.name = data.players[s].name || ('P' + slotNum);
+                            break;
+                        }
+                    }
                 }
                 renderRoomSlots();
                 break;
@@ -2041,15 +2052,26 @@
                 const slot = parseInt(data.slot, 10);
                 if (slot < 1 || slot > 3) break;
                 if (!game.mp.players[slot]) break;
-                // 安全: 限制名稱長度 + 移除控制字元
-                const cleanName = String(data.name || 'P' + slot)
+                const rawName = String(data.name || 'P' + slot)
                     .replace(/[\x00-\x1f\x7f]/g, '')
-                    .slice(0, 12);
-                game.mp.players[slot].name = cleanName || ('P' + slot);
+                    .slice(0, 12) || ('P' + slot);
+                // 自動去重: 若名稱與其他連線玩家相同, 加上 (2) / (3) 後綴
+                const existing = new Set();
+                existing.add(game.mp.myName);
+                for (const s in game.mp.players) {
+                    if (parseInt(s, 10) !== slot) existing.add(game.mp.players[s].name);
+                }
+                let finalName = rawName;
+                let suffix = 2;
+                while (existing.has(finalName)) {
+                    finalName = rawName.slice(0, 8) + ' (' + suffix + ')';
+                    suffix++;
+                    if (suffix > 9) break;
+                }
+                game.mp.players[slot].name = finalName;
                 broadcastLobby();
                 renderRoomSlots();
-                // 系統訊息: 通知大廳有玩家加入
-                const joinMsg = cleanName + ' 加入房間';
+                const joinMsg = finalName + ' 加入房間';
                 appendChatMessage({ system: true, text: joinMsg });
                 window.Multiplayer.send({ type: 'chat', system: true, text: joinMsg, t: Date.now() });
                 break;
@@ -2077,14 +2099,13 @@
                 const py = (ny !== null && isFinite(ny)) ? ny * cachedSize.h : Number(data.y) || 0;
                 const hp = Math.max(0, Math.min(500, Number(data.hp) || 0));
                 const maxHp = Math.max(1, Math.min(500, Number(data.maxHp) || 100));
-                const cleanName = data.name ? String(data.name).replace(/[\x00-\x1f\x7f]/g, '').slice(0, 12) : null;
+                // 注意: 不在這裡更新 name — 防止狀態訊息蓋掉 lobby 去重後的名稱
                 if (data.slot !== undefined && mp.teamMode === '2v2') {
                     const p = mp.players[data.slot];
                     if (p) {
                         p.x = px; p.y = py;
                         p.hp = hp; p.maxHp = maxHp;
                         p.alive = hp > 0;
-                        if (cleanName) p.name = cleanName;
                     }
                 } else {
                     mp.opponent.x = px;
@@ -2092,7 +2113,6 @@
                     mp.opponent.hp = hp;
                     mp.opponent.maxHp = maxHp;
                     mp.opponent.alive = hp > 0;
-                    if (cleanName) mp.opponent.name = cleanName;
                     mp.opponent.lastUpdate = performance.now();
                 }
                 break;
@@ -3073,6 +3093,8 @@
     // ==== PvP 更新 & 渲染 ====
     function updatePvp(dt) {
         const mp = game.mp;
+        // 安全: 對戰未進行時不做任何事 (rematch 後進入 mp-room 時避免殘留邏輯)
+        if (!mp.active) return;
 
         // Hitstop
         if (game.hitstopTimer > 0) {
@@ -3211,15 +3233,13 @@
 
         window.Particles.update(dt);
 
-        // 送自身狀態 (~20hz) — 2v2 需附 slot 和 name
-        // 使用歸一化座標 (0-1) 以避免雙方畫布尺寸不同時位置對不上
+        // 送自身狀態 (~20hz) — 名稱不放這裡 (由 lobby 廣播授權, 避免蓋掉去重後的名稱)
         mp.sendTimer += dt;
         if (mp.sendTimer > 0.05) {
             mp.sendTimer = 0;
             window.Multiplayer.send({
                 type: 'state',
                 slot: mp.mySlot,
-                name: mp.myName,
                 nx: game.player.x / cachedSize.w,
                 ny: game.player.y / cachedSize.h,
                 hp: game.player.hp, maxHp: game.player.maxHp
