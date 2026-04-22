@@ -279,11 +279,11 @@
         game.pickups.push({
             x: x, y: y,
             type: pickRandomPickupType(),
-            vx: (Math.random() - 0.5) * 60,
-            vy: -80,
-            onGround: false,
+            // 小幅 4 方向散射後很快減速停下 — 不受重力影響
+            vx: (Math.random() - 0.5) * 120,
+            vy: (Math.random() - 0.5) * 120,
             bob: Math.random() * Math.PI * 2,
-            life: 20    // 20 秒後消失
+            life: 25    // 停留時間加長
         });
     }
 
@@ -300,27 +300,26 @@
 
     function updatePickupsAndTraps(dt) {
         const p = game.player;
-        // Pickups: 小跳 + 飄移 + 重力, 碰玩家吸收
+        const size = getCanvasSize();
+        const margin = 24;
+        // Pickups: 小範圍飄散後靜止 (無重力), 碰玩家吸收
         for (let i = game.pickups.length - 1; i >= 0; i--) {
             const pk = game.pickups[i];
-            pk.bob += dt * 4;
-            if (!pk.onGround) {
-                pk.vy += 300 * dt;  // 重力
-                pk.x += pk.vx * dt;
-                pk.y += pk.vy * dt;
-                pk.vx *= 0.95;
-                const size = getCanvasSize();
-                if (pk.y > size.h - 30) {
-                    pk.y = size.h - 30;
-                    pk.vy = 0; pk.vx = 0;
-                    pk.onGround = true;
-                }
-            }
+            pk.bob += dt * 3;
+            // 散射 + 快速減速 (~0.5s 內停下)
+            pk.x += pk.vx * dt;
+            pk.y += pk.vy * dt;
+            pk.vx *= 0.88;
+            pk.vy *= 0.88;
+            // 在畫布邊界內彈回 (避免飛出場外)
+            if (pk.x < margin)               { pk.x = margin;             pk.vx = Math.abs(pk.vx) * 0.4; }
+            if (pk.x > size.w - margin)      { pk.x = size.w - margin;    pk.vx = -Math.abs(pk.vx) * 0.4; }
+            if (pk.y < margin)               { pk.y = margin;             pk.vy = Math.abs(pk.vy) * 0.4; }
+            if (pk.y > size.h - margin)      { pk.y = size.h - margin;    pk.vy = -Math.abs(pk.vy) * 0.4; }
             pk.life -= dt;
-            // 快消失時閃爍效果 (靠渲染判斷)
             // 與玩家碰撞
             const dx = pk.x - p.x, dy = pk.y - p.y;
-            if (dx * dx + dy * dy < (p.radius + 20) * (p.radius + 20)) {
+            if (dx * dx + dy * dy < (p.radius + 22) * (p.radius + 22)) {
                 applyPickup(pk.type);
                 window.Particles.burst(pk.x, pk.y, {
                     count: 20, spread: 180, life: 0.6,
