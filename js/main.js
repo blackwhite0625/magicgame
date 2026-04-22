@@ -1908,20 +1908,24 @@
                 // 對方 ping 我 → 回傳 pong 帶上原 timestamp
                 window.Multiplayer.send({ type: 'pong', t: data.t });
                 break;
-            case 'pong':
-                if (typeof data.t === 'number') {
-                    const rtt = Math.round(performance.now() - data.t);
-                    game.mp.pingMs = rtt;
-                    const el = document.getElementById('mp-ping-display');
-                    if (el) {
-                        el.textContent = 'Ping: ' + rtt + ' ms';
-                        el.classList.remove('ping-good', 'ping-mid', 'ping-bad');
-                        if (rtt < 60) el.classList.add('ping-good');
-                        else if (rtt < 150) el.classList.add('ping-mid');
-                        else el.classList.add('ping-bad');
-                    }
+            case 'pong': {
+                const t = Number(data.t);
+                if (!isFinite(t)) break;                              // 非數字忽略
+                let rtt = Math.round(performance.now() - t);
+                if (rtt < 0) rtt = 0;                                 // 避免浮點誤差造成負數
+                if (rtt > 9999) break;                                // 異常大值忽略 (可能是舊封包)
+                game.mp.pingMs = rtt;
+                game.mp.lastPongAt = performance.now();
+                const el = document.getElementById('mp-ping-display');
+                if (el) {
+                    el.textContent = 'Ping: ' + rtt + ' ms';
+                    el.classList.remove('ping-good', 'ping-mid', 'ping-bad');
+                    if (rtt < 60) el.classList.add('ping-good');
+                    else if (rtt < 150) el.classList.add('ping-mid');
+                    else el.classList.add('ping-bad');
                 }
                 break;
+            }
             case 'hello': {
                 if (!game.mp.isHost) break;
                 const slot = parseInt(data.slot, 10);
@@ -1952,25 +1956,29 @@
                 beginMpMatch(false);
                 break;
             case 'state': {
-                // 接收 nx/ny (歸一化 0-1), 乘上本端畫布尺寸還原
-                // 兼容舊格式 (x/y 絕對像素)
-                const px = data.nx !== undefined ? data.nx * cachedSize.w : data.x;
-                const py = data.ny !== undefined ? data.ny * cachedSize.h : data.y;
+                // 安全: 限制範圍避免惡意資料導致錯位
+                const nx = data.nx !== undefined ? Math.max(-0.1, Math.min(1.1, Number(data.nx))) : null;
+                const ny = data.ny !== undefined ? Math.max(-0.1, Math.min(1.1, Number(data.ny))) : null;
+                const px = (nx !== null && isFinite(nx)) ? nx * cachedSize.w : Number(data.x) || 0;
+                const py = (ny !== null && isFinite(ny)) ? ny * cachedSize.h : Number(data.y) || 0;
+                const hp = Math.max(0, Math.min(500, Number(data.hp) || 0));
+                const maxHp = Math.max(1, Math.min(500, Number(data.maxHp) || 100));
+                const cleanName = data.name ? String(data.name).replace(/[\x00-\x1f\x7f]/g, '').slice(0, 12) : null;
                 if (data.slot !== undefined && mp.teamMode === '2v2') {
                     const p = mp.players[data.slot];
                     if (p) {
                         p.x = px; p.y = py;
-                        p.hp = data.hp; p.maxHp = data.maxHp;
-                        p.alive = data.hp > 0;
-                        if (data.name) p.name = data.name;
+                        p.hp = hp; p.maxHp = maxHp;
+                        p.alive = hp > 0;
+                        if (cleanName) p.name = cleanName;
                     }
                 } else {
                     mp.opponent.x = px;
                     mp.opponent.y = py;
-                    mp.opponent.hp = data.hp;
-                    mp.opponent.maxHp = data.maxHp;
-                    mp.opponent.alive = data.hp > 0;
-                    if (data.name) mp.opponent.name = data.name;
+                    mp.opponent.hp = hp;
+                    mp.opponent.maxHp = maxHp;
+                    mp.opponent.alive = hp > 0;
+                    if (cleanName) mp.opponent.name = cleanName;
                     mp.opponent.lastUpdate = performance.now();
                 }
                 break;
@@ -2109,10 +2117,24 @@
     // Ping 循環: 每 2 秒送一次 ping
     function startPingLoop() {
         stopPingLoop();
-        document.getElementById('mp-ping-display').classList.remove('hidden');
+        const el = document.getElementById('mp-ping-display');
+        if (el) {
+            el.classList.remove('hidden');
+            el.textContent = 'Ping: -- ms';
+            el.classList.remove('ping-good', 'ping-mid', 'ping-bad');
+        }
+        game.mp.lastPongAt = performance.now();
         game.mp.pingInterval = setInterval(() => {
-            if (window.Multiplayer && window.Multiplayer.isConnected()) {
-                window.Multiplayer.send({ type: 'ping', t: performance.now() });
+            if (!window.Multiplayer || !window.Multiplayer.isConnected()) return;
+            window.Multiplayer.send({ type: 'ping', t: performance.now() });
+            // 若超過 6 秒沒回應 pong, 顯示 timeout
+            if (game.mp.lastPongAt && performance.now() - game.mp.lastPongAt > 6000) {
+                const pel = document.getElementById('mp-ping-display');
+                if (pel) {
+                    pel.textContent = 'Ping: 斷線?';
+                    pel.classList.remove('ping-good', 'ping-mid');
+                    pel.classList.add('ping-bad');
+                }
             }
         }, 2000);
         // 立刻發一次
@@ -2125,7 +2147,8 @@
             clearInterval(game.mp.pingInterval);
             game.mp.pingInterval = null;
         }
-        document.getElementById('mp-ping-display').classList.add('hidden');
+        const el = document.getElementById('mp-ping-display');
+        if (el) el.classList.add('hidden');
     }
 
     function startMpRound() {
@@ -2185,6 +2208,8 @@
         mp.opponent.hp = 100;
         mp.opponent.maxHp = 100;
         mp.opponent.alive = true;
+        // 若 spawn 點正好與障礙物重疊, 立刻推出
+        resolveObstacleCollisions();
         // 重置冷卻/效果
         for (const k in game.cooldowns) game.cooldowns[k] = 0;
         window.Particles.clear();
@@ -2985,16 +3010,10 @@
         }
 
         // 玩家移動 (含障礙物碰撞)
-        const before = { x: game.player.x, y: game.player.y };
         updatePlayerMovement(dt);
-        // 障礙物碰撞: 撞到就退回原位
-        for (let i = 0; i < mp.obstacles.length; i++) {
-            if (window.Maps.circleHitObstacle(game.player.x, game.player.y, game.player.radius, mp.obstacles[i])) {
-                game.player.x = before.x;
-                game.player.y = before.y;
-                break;
-            }
-        }
+        // 障礙物碰撞: 使用「推出」演算法 (若重疊, 推到最近邊緣)
+        // 這樣玩家不會卡在障礙物內, 還能沿著邊緣滑動
+        resolveObstacleCollisions();
 
         // 岩漿踩踏傷害 (每秒觸發一次)
         const groundDmg = window.Maps.getGroundDamage(mp.obstacles, game.player.x, game.player.y);
@@ -3099,6 +3118,60 @@
         }
 
         window.UI.updateHUD(getHudState());
+    }
+
+    // 障礙物碰撞解決: 每幀結束後, 若玩家與任何障礙物重疊, 把他推出到邊緣
+    // 相較於「撞到就還原」, 此做法:
+    //   1. 不會卡在障礙物內 (任何時刻都會被推出)
+    //   2. 能自然滑過障礙物邊緣 (推出方向永遠遠離障礙物中心)
+    //   3. 若 spawn 時位置卡住也能自動解開
+    function resolveObstacleCollisions() {
+        const obs = game.mp.obstacles;
+        if (!obs || !obs.length) return;
+        const p = game.player;
+        // 多次迭代以處理多障礙物堆疊
+        for (let iter = 0; iter < 3; iter++) {
+            let resolved = true;
+            for (let i = 0; i < obs.length; i++) {
+                const o = obs[i];
+                if (o.passable) continue;
+                let nearestX, nearestY, radius2;
+                if (o.type === 'circle') {
+                    nearestX = o.x;
+                    nearestY = o.y;
+                    radius2 = o.r;
+                } else {
+                    // 矩形: 找最近邊緣點
+                    nearestX = Math.max(o.x - o.w / 2, Math.min(p.x, o.x + o.w / 2));
+                    nearestY = Math.max(o.y - o.h / 2, Math.min(p.y, o.y + o.h / 2));
+                    radius2 = 0;
+                }
+                const dx = p.x - nearestX;
+                const dy = p.y - nearestY;
+                const distSq = dx * dx + dy * dy;
+                const minD = p.radius + radius2;
+                if (distSq < minD * minD) {
+                    resolved = false;
+                    const dist = Math.sqrt(distSq);
+                    if (dist < 0.001) {
+                        // 完全重疊的退化情況 — 任意方向推出
+                        p.x += minD;
+                    } else {
+                        const push = minD - dist;
+                        p.x += (dx / dist) * push;
+                        p.y += (dy / dist) * push;
+                    }
+                }
+            }
+            if (resolved) break;
+        }
+        // 確保推出後仍在畫布內
+        const size = getCanvasSize();
+        const margin = p.radius + 10;
+        if (p.x < margin) p.x = margin;
+        if (p.x > size.w - margin) p.x = size.w - margin;
+        if (p.y < margin) p.y = margin;
+        if (p.y > size.h - margin) p.y = size.h - margin;
     }
 
     function mpOpponentAsEnemy() {
