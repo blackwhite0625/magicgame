@@ -679,6 +679,7 @@
         // 進階
         { key: 'poison', cost: 300 },
         { key: 'teleport', cost: 380 },
+        { key: 'summon', cost: 450 },
         // 終極
         { key: 'meteor', cost: 500 },
         { key: 'holynova', cost: 600 }

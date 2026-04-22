@@ -3487,16 +3487,38 @@
     };
 
     function startPractice() {
-        game.state = 'practice';     // 關鍵: 讓 mainLoop 跑 renderPractice
+        game.state = 'practice';
         practice.state = 'ready';
         practice.targetRune = 'fireball';
         practice.lastResult = null;
         practice.lastTrail = null;
         practice.lastMatch = false;
+        // 依當前符文清單動態建立練習按鈕 (加入新符文時自動出現)
+        buildPracticeButtons();
         window.UI.showScreen('practice-screen');
         resizeCanvas();
         setPracticeTarget('fireball');
         window.Particles.clear();
+    }
+
+    function buildPracticeButtons() {
+        const container = document.getElementById('practice-controls');
+        if (!container) return;
+        if (container.children.length > 0 && container.dataset.built) return;
+        container.innerHTML = '';
+        for (const key in window.Spells.CONFIG) {
+            const cfg = window.Spells.CONFIG[key];
+            const btn = document.createElement('button');
+            btn.className = 'practice-btn';
+            btn.dataset.rune = key;
+            btn.textContent = cfg.name;
+            btn.addEventListener('click', () => {
+                setPracticeTarget(key);
+                window.UI.playSfx('ui');
+            });
+            container.appendChild(btn);
+        }
+        container.dataset.built = '1';
     }
 
     function setPracticeTarget(name) {
@@ -3832,12 +3854,7 @@
             });
         }
 
-        document.querySelectorAll('.practice-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                setPracticeTarget(btn.dataset.rune);
-                window.UI.playSfx('ui');
-            });
-        });
+        // 練習按鈕改為動態生成 (buildPracticeButtons) 時掛事件, 這裡不再處理
 
         document.getElementById('pause-btn').addEventListener('click', () => {
             if (game.state === 'playing') {
