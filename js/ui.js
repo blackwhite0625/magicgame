@@ -63,90 +63,121 @@
 
         switch (type) {
             case 'fireball': {
-                // 快速膨脹 + 爆聲
-                tone(ctx, now, 220, 0.25, 'sawtooth', 0.4, 110);
-                tone(ctx, now + 0.05, 440, 0.15, 'sawtooth', 0.2, 180);
-                noise(ctx, now, 0.12, 0.25);
+                // 火球: whoosh 噴射 + 火焰嗶啵 + 低頻燃燒聲
+                tone(ctx, now, 180, 0.3, 'sawtooth', 0.35, 70);   // 低頻噴射
+                tone(ctx, now + 0.03, 420, 0.2, 'triangle', 0.22, 140);  // 中頻燃燒
+                filteredNoise(ctx, now, 0.25, 0.3, 1200, 'lowpass');    // 悶火焰雜訊
+                filteredNoise(ctx, now + 0.1, 0.3, 0.15, 600, 'lowpass'); // 延續
                 break;
             }
             case 'lightning': {
-                tone(ctx, now, 1400, 0.1, 'square', 0.35, 160);
-                tone(ctx, now + 0.04, 1800, 0.08, 'sawtooth', 0.25, 300);
-                noise(ctx, now, 0.18, 0.3);
+                // 閃電: 瞬間高頻 crack + 低頻餘震 + 雷鳴
+                noise(ctx, now, 0.06, 0.45);                          // 電光 crack
+                tone(ctx, now, 3000, 0.04, 'square', 0.25, 600);     // 尖銳瞬響
+                tone(ctx, now + 0.02, 1200, 0.15, 'sawtooth', 0.25, 80); // 電鳴
+                tone(ctx, now + 0.05, 70, 0.5, 'sine', 0.3, 30);    // 低頻雷鳴餘震
+                filteredNoise(ctx, now + 0.05, 0.4, 0.15, 400, 'lowpass');
                 break;
             }
             case 'icespike': {
-                tone(ctx, now, 700, 0.22, 'triangle', 0.35, 350);
-                tone(ctx, now + 0.04, 1400, 0.15, 'sine', 0.2, 900);  // 晶響
+                // 冰刺: 晶瑩尖刺 + 空氣破開 + 高音顫音
+                tone(ctx, now, 900, 0.1, 'triangle', 0.3, 420);     // 穿射
+                tone(ctx, now + 0.04, 1800, 0.25, 'sine', 0.22, 1400); // 高頻晶響
+                tone(ctx, now + 0.08, 2600, 0.18, 'sine', 0.12, 3400); // 極高頻閃光
+                filteredNoise(ctx, now + 0.02, 0.08, 0.12, 3000, 'highpass'); // 破空聲
                 break;
             }
             case 'heal': {
-                tone(ctx, now, 523, 0.3, 'sine', 0.35, 523);
-                tone(ctx, now + 0.1, 659, 0.3, 'sine', 0.3, 659);
-                tone(ctx, now + 0.2, 784, 0.45, 'sine', 0.25, 784);
-                tone(ctx, now + 0.3, 1047, 0.4, 'sine', 0.2, 1047);
+                // 治療: 柔和天使合唱 (加八度和聲)
+                tone(ctx, now, 523, 0.4, 'sine', 0.3, 523);          // C5
+                tone(ctx, now, 1047, 0.4, 'sine', 0.12, 1047);       // C6 泛音
+                tone(ctx, now + 0.1, 659, 0.4, 'sine', 0.28, 659);   // E5
+                tone(ctx, now + 0.2, 784, 0.5, 'sine', 0.26, 784);   // G5
+                tone(ctx, now + 0.35, 1047, 0.6, 'sine', 0.3);       // C6 主題
+                tone(ctx, now + 0.5, 1568, 0.8, 'sine', 0.15);       // 高音尾
                 break;
             }
             case 'shield': {
-                tone(ctx, now, 440, 0.35, 'triangle', 0.3, 660);
-                tone(ctx, now + 0.1, 660, 0.3, 'sine', 0.2, 880);
+                // 護盾: 金屬成形 + 能量共鳴
+                tone(ctx, now, 220, 0.15, 'triangle', 0.25, 440);
+                tone(ctx, now + 0.05, 660, 0.3, 'triangle', 0.3, 880);
+                tone(ctx, now + 0.12, 330, 0.5, 'sine', 0.2, 440);   // 持續共鳴
+                tone(ctx, now + 0.12, 660, 0.5, 'sine', 0.12, 880);  // 和音
                 break;
             }
             case 'meteor': {
-                tone(ctx, now, 120, 0.9, 'sawtooth', 0.5, 40);
-                tone(ctx, now + 0.2, 80, 1.1, 'sawtooth', 0.4, 30);
-                noise(ctx, now, 0.6, 0.4);
-                noise(ctx, now + 0.8, 0.5, 0.35);  // 撞擊音
+                // 隕石: 劃空巨響 + 撞擊 + 地裂餘震
+                tone(ctx, now, 120, 0.6, 'sawtooth', 0.4, 40);       // 來襲呼嘯
+                filteredNoise(ctx, now, 0.6, 0.3, 400, 'lowpass');   // 穿空雜訊
+                tone(ctx, now + 0.4, 60, 0.8, 'sawtooth', 0.45, 25); // 撞擊低頻
+                noise(ctx, now + 0.55, 0.5, 0.45);                   // 爆炸雜訊
+                tone(ctx, now + 0.7, 40, 0.5, 'sine', 0.3, 20);      // 餘震
                 break;
             }
             case 'wind': {
-                // 持續雜訊高通 + 上掃
-                noise(ctx, now, 0.35, 0.4);
-                tone(ctx, now, 400, 0.3, 'triangle', 0.2, 1200);
+                // 風刃: 尖銳呼嘯 + 切風
+                filteredNoise(ctx, now, 0.4, 0.45, 2800, 'highpass'); // 高頻風聲
+                tone(ctx, now, 400, 0.3, 'sine', 0.12, 1800);         // 上掃風嘯
+                tone(ctx, now + 0.1, 900, 0.15, 'triangle', 0.08, 1400); // 尾音
                 break;
             }
             case 'poison': {
-                // 低頻冒泡
-                tone(ctx, now, 160, 0.4, 'sine', 0.35, 220);
-                tone(ctx, now + 0.15, 200, 0.3, 'sine', 0.25, 140);
-                tone(ctx, now + 0.3, 180, 0.35, 'sine', 0.2, 260);
+                // 毒霧: 低頻冒泡 + 嘶嘶氣體
+                tone(ctx, now, 120, 0.35, 'sine', 0.25, 200);
+                tone(ctx, now + 0.1, 180, 0.25, 'triangle', 0.22, 140);
+                tone(ctx, now + 0.22, 90, 0.3, 'sine', 0.22, 120);
+                tone(ctx, now + 0.35, 150, 0.3, 'sine', 0.18, 200);  // 第二氣泡
+                filteredNoise(ctx, now, 0.45, 0.15, 500, 'bandpass'); // 嘶嘶氣
                 break;
             }
             case 'teleport': {
-                // 快速上掃 + 短閃
-                tone(ctx, now, 300, 0.15, 'sine', 0.35, 1800);
-                tone(ctx, now + 0.08, 1800, 0.2, 'sine', 0.3, 400);
+                // 閃現: 消失上掃 + 瞬現下掃 + 魔法餘音
+                tone(ctx, now, 200, 0.1, 'sine', 0.3, 2500);
+                filteredNoise(ctx, now, 0.1, 0.2, 3000, 'highpass');
+                tone(ctx, now + 0.1, 2500, 0.15, 'sine', 0.3, 500);
+                tone(ctx, now + 0.15, 800, 0.25, 'triangle', 0.18, 1200);
                 break;
             }
             case 'holynova': {
-                // 亮和弦 + 鐘聲
-                tone(ctx, now, 523, 0.5, 'sine', 0.35);
-                tone(ctx, now, 659, 0.5, 'sine', 0.3);
-                tone(ctx, now, 784, 0.5, 'sine', 0.3);
-                tone(ctx, now + 0.2, 1047, 0.8, 'sine', 0.35);
-                tone(ctx, now + 0.4, 1568, 1.0, 'sine', 0.25);
+                // 聖光爆: 大和聲 + 鐘聲 + 持續光暈
+                tone(ctx, now, 523, 0.6, 'sine', 0.3);                // C
+                tone(ctx, now, 659, 0.6, 'sine', 0.25);               // E
+                tone(ctx, now, 784, 0.6, 'sine', 0.25);               // G
+                tone(ctx, now + 0.08, 1047, 0.8, 'sine', 0.3);        // C6
+                tone(ctx, now + 0.2, 1568, 0.9, 'sine', 0.22);        // G6
+                tone(ctx, now + 0.35, 2093, 1.0, 'sine', 0.16);       // C7 鐘聲尾
                 break;
             }
             case 'slash': {
-                // 快速劃破聲
-                tone(ctx, now, 800, 0.1, 'sawtooth', 0.3, 200);
-                noise(ctx, now, 0.12, 0.25);
+                // 利刃斬: 劃破空氣
+                filteredNoise(ctx, now, 0.14, 0.4, 4000, 'highpass');
+                tone(ctx, now, 1200, 0.08, 'sawtooth', 0.25, 300);
+                tone(ctx, now + 0.02, 600, 0.12, 'triangle', 0.18, 200);
                 break;
             }
             case 'groundslam': {
-                // 重擊低頻
-                tone(ctx, now, 80, 0.5, 'sawtooth', 0.5, 40);
-                noise(ctx, now, 0.3, 0.4);
-                tone(ctx, now + 0.1, 200, 0.3, 'triangle', 0.3, 50);
+                // 大地轟擊: 超低震 + 碎石 + 餘波
+                tone(ctx, now, 55, 0.5, 'sawtooth', 0.5, 22);
+                filteredNoise(ctx, now, 0.35, 0.45, 250, 'lowpass');  // 低頻轟隆
+                tone(ctx, now + 0.1, 100, 0.3, 'triangle', 0.3, 40);
+                tone(ctx, now + 0.25, 40, 0.5, 'sine', 0.28, 18);     // 餘震
+                noise(ctx, now + 0.15, 0.2, 0.2);                      // 碎石
                 break;
             }
             case 'blooddrain': {
-                // 陰森吸取音
-                tone(ctx, now, 180, 0.3, 'sawtooth', 0.3, 350);
-                tone(ctx, now + 0.1, 350, 0.3, 'sine', 0.25, 180);
+                // 吸血之觸: 陰森抽取 + 壓抑共鳴
+                tone(ctx, now, 150, 0.4, 'sawtooth', 0.3, 420);
+                tone(ctx, now + 0.1, 380, 0.3, 'sine', 0.25, 180);
+                tone(ctx, now + 0.22, 200, 0.35, 'triangle', 0.2, 80);
+                filteredNoise(ctx, now + 0.05, 0.3, 0.15, 800, 'bandpass');
                 break;
             }
-            case 'hit': tone(ctx, now, 150, 0.15, 'square', 0.4, 60); break;
+            case 'hit': {
+                // 擊中回饋: 柔和低頻 thump
+                tone(ctx, now, 180, 0.12, 'sawtooth', 0.3, 60);
+                noise(ctx, now, 0.06, 0.18);
+                break;
+            }
             case 'enemyDie': {
                 // 敵人死亡: 下掃短促
                 tone(ctx, now, 300, 0.25, 'sawtooth', 0.3, 80);
@@ -210,7 +241,12 @@
                 tone(ctx, now + 0.08, 1047, 0.25, 'sine', 0.3);
                 break;
             }
-            case 'ui': tone(ctx, now, 800, 0.06, 'square', 0.15, 1200); break;
+            case 'ui': {
+                // 溫和的 tap 音: 雙層正弦波, 去掉原本 square 的尖銳感
+                tone(ctx, now, 440, 0.08, 'sine', 0.16, 560);
+                tone(ctx, now + 0.015, 660, 0.1, 'triangle', 0.09, 780);
+                break;
+            }
         }
     }
 
@@ -244,6 +280,27 @@
         gain.gain.setValueAtTime(vol * sfxVolume, startTime);
         gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
         src.connect(gain).connect(ctx.destination);
+        src.start(startTime);
+    }
+
+    /** 濾波雜訊 (風聲 / 低頻轟鳴等) */
+    function filteredNoise(ctx, startTime, duration, vol, filterFreq, filterType) {
+        const bufferSize = Math.floor(ctx.sampleRate * duration);
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+        }
+        const src = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+        filter.type = filterType || 'lowpass';
+        filter.frequency.value = filterFreq || 1000;
+        filter.Q.value = 1;
+        src.buffer = buffer;
+        gain.gain.setValueAtTime(vol * sfxVolume, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        src.connect(filter).connect(gain).connect(ctx.destination);
         src.start(startTime);
     }
 

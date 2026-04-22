@@ -3755,7 +3755,11 @@
                     break;
                 }
                 // 共用畫面 (符文練習 / 圖鑑 / 設定) → 依 context 回對應子選單
-                const target = game.menuContext === 'mp' ? 'mp-mode-select' : 'sp-menu';
+                // 若從主選單直接進 (context = null), 回主選單
+                let target;
+                if (game.menuContext === 'mp') target = 'mp-mode-select';
+                else if (game.menuContext === 'sp') target = 'sp-menu';
+                else target = 'main-menu';
                 window.UI.showScreen(target);
                 game.state = 'menu';
                 window.UI.stopBgm();
