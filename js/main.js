@@ -903,9 +903,12 @@
     function processGameSpell(trail) {
         const isPvp = game.state === 'pvp' && game.mp.active && game.mp.roundState === 'playing';
         if (isPvp) {
-            const is2v2 = game.mp.teamMode === '2v2';
-            // 2v2: 只把「敵隊」放進 enemies 列表, 確保 findNearestEnemy + AOE 都不會攻擊隊友
-            const enemyList = is2v2 ? getEnemyTargets() : [mpOpponentAsEnemy()];
+            // 1v1: 單一對手. 2v2: 敵隊 2 人. brawl: 所有其他玩家 (FFA)
+            // bug fix: 之前 brawl 用了 mpOpponentAsEnemy() (座標 0,0), 投射物全飛到左上角
+            const tm = game.mp.teamMode;
+            const enemyList = (tm === '2v2' || tm === 'brawl')
+                ? getEnemyTargets()
+                : [mpOpponentAsEnemy()];
             // 記錄每個敵人當前 HP, 施法後計算差值送 hit (單體/AOE 皆適用)
             const snapshot = enemyList.map(e => ({
                 slot: e._slot,
@@ -974,9 +977,9 @@
             game.comboTimer = 0;
             return;
         }
-        // 歧義檢查: 最佳與次佳分差太小 → 兩種符文撞型, 除非準確度非常高否則拒絕
-        // 之前 accuracy < 0.78 太寬鬆, 改為 0.85 — 只有極高精度才容許小 margin
-        if (result.margin !== undefined && result.margin < window.Recognizer.MIN_MARGIN && result.accuracy < 0.85) {
+        // 歧義檢查: 最佳與次佳分差太小 → 除非準確度夠高否則拒絕
+        // 0.85 太嚴讓閃電常被拒; 降為 0.80 — 0.80+ 分差小也接受, <0.80 才要求分差
+        if (result.margin !== undefined && result.margin < window.Recognizer.MIN_MARGIN && result.accuracy < 0.80) {
             window.UI.showRecognition(null, 0, false);
             window.UI.playSfx('fail');
             game.combo = 0;
@@ -4015,14 +4018,13 @@
         const sx = game.shake.x, sy = game.shake.y;
         if (sx || sy) { ctx.save(); ctx.translate(sx, sy); }
 
-        // 大亂鬥: 所有世界實體改以 camera offset 繪製 (背景填滿畫布直接 tile)
+        // 大亂鬥: 所有世界實體改以 camera offset 繪製
         const isBrawl = game.mp.teamMode === 'brawl';
         if (isBrawl) {
-            // 背景先畫在畫面上 (不用 camera 變換, 繪成大世界比例)
-            window.Maps.drawBackground(game.mp.mapId, ctx, w, h);
-            // 套用攝影機變換後, 繪製世界實體
+            // 套用攝影機變換後, 繪製整個世界 (背景也要用世界尺寸, 玩家才看得出移動)
             ctx.save();
             ctx.translate(-game.camera.x, -game.camera.y);
+            window.Maps.drawBackground(game.mp.mapId, ctx, BRAWL_WORLD_W, BRAWL_WORLD_H);
             window.Maps.drawObstacles(game.mp.obstacles, ctx);
             window.Spells.renderPoisonFields(ctx);
             drawPlayer();
