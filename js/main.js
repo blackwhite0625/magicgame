@@ -742,8 +742,10 @@
                 window.Multiplayer.send({
                     type: 'cast',
                     spell: name,
-                    x: game.player.x, y: game.player.y,
-                    tx: game.mp.opponent.x, ty: game.mp.opponent.y,
+                    nx: game.player.x / cachedSize.w,
+                    ny: game.player.y / cachedSize.h,
+                    ntx: game.mp.opponent.x / cachedSize.w,
+                    nty: game.mp.opponent.y / cachedSize.h,
                     critical: critical
                 });
             });
@@ -1471,8 +1473,8 @@
         game.mp.paused = false;
         document.getElementById('mp-result').classList.add('hidden');
         document.getElementById('mp-pause-menu').classList.add('hidden');
-        game.menuContext = null;
-        window.UI.showScreen('main-menu');
+        // 回多人模式子選單 (保留 context)
+        window.UI.showScreen('mp-mode-select');
         window.UI.showControlsHint(false);
     }
 
@@ -1740,18 +1742,22 @@
                 mp.rounds = data.rounds || mp.rounds;
                 beginMpMatch(false);
                 break;
-            case 'state':
+            case 'state': {
+                // 接收 nx/ny (歸一化 0-1), 乘上本端畫布尺寸還原
+                // 兼容舊格式 (x/y 絕對像素)
+                const px = data.nx !== undefined ? data.nx * cachedSize.w : data.x;
+                const py = data.ny !== undefined ? data.ny * cachedSize.h : data.y;
                 if (data.slot !== undefined && mp.teamMode === '2v2') {
                     const p = mp.players[data.slot];
                     if (p) {
-                        p.x = data.x; p.y = data.y;
+                        p.x = px; p.y = py;
                         p.hp = data.hp; p.maxHp = data.maxHp;
                         p.alive = data.hp > 0;
                         if (data.name) p.name = data.name;
                     }
                 } else {
-                    mp.opponent.x = data.x;
-                    mp.opponent.y = data.y;
+                    mp.opponent.x = px;
+                    mp.opponent.y = py;
                     mp.opponent.hp = data.hp;
                     mp.opponent.maxHp = data.maxHp;
                     mp.opponent.alive = data.hp > 0;
@@ -1759,17 +1765,19 @@
                     mp.opponent.lastUpdate = performance.now();
                 }
                 break;
+            }
             case 'cast':
                 // 對手發射技能 — 本端產生對應視覺 (發射者 = 對手)
                 spawnRemoteCast(data);
                 break;
-            case 'hit':
-                // 只要對戰進行中就接受傷害 (含 countdown 交界瞬間, 避免因同步差異漏傷)
+            case 'hit': {
                 if (!mp.active) break;
-                // 2v2 專用: 帶 target 欄位時僅對指定 slot 生效; 1v1 無 target 欄位, 一律吃傷害
                 if (mp.teamMode === '2v2' && data.target !== undefined && data.target !== mp.mySlot) break;
-                onPlayerHit(data.damage, { kind: data.spell, x: data.x, y: data.y });
+                const hx = data.nx !== undefined ? data.nx * cachedSize.w : data.x;
+                const hy = data.ny !== undefined ? data.ny * cachedSize.h : data.y;
+                onPlayerHit(data.damage, { kind: data.spell, x: hx, y: hy });
                 break;
+            }
             case 'roundOver':
                 // 重複訊息防止 (本端可能已自行判定)
                 if (mp.roundState !== 'playing') break;
@@ -1823,8 +1831,9 @@
         // 將對手端的施法還原到本地視覺 — 起點是對手位置, 目標朝我方向
         const opp = game.mp.opponent;
         const me = game.player;
-        const tx = me.x + (Math.random() - 0.5) * 30;
-        const ty = me.y + (Math.random() - 0.5) * 30;
+        // 若 data 附 ntx/nty, 代表發送端目標 (本地自己位置的歸一化)
+        const tx = (data.ntx !== undefined ? data.ntx * cachedSize.w : me.x) + (Math.random() - 0.5) * 30;
+        const ty = (data.nty !== undefined ? data.nty * cachedSize.h : me.y) + (Math.random() - 0.5) * 30;
         const name = data.spell;
         switch (name) {
             case 'fireball':
@@ -1841,9 +1850,12 @@
                 window.Spells.createLightning(opp.x, opp.y - 20, me.x, me.y);
                 // 直接收到 hit 訊息時扣血, 這裡僅視覺
                 break;
-            case 'meteor':
-                window.Spells.scheduleMeteor(data.tx || me.x, data.ty || me.y, false);
+            case 'meteor': {
+                const mx = data.ntx !== undefined ? data.ntx * cachedSize.w : me.x;
+                const my = data.nty !== undefined ? data.nty * cachedSize.h : me.y;
+                window.Spells.scheduleMeteor(mx, my, false);
                 break;
+            }
             case 'holynova':
                 window.Spells.createShockwave(opp.x, opp.y, 220, '#ffee99', 0.9);
                 window.Particles.burst(opp.x, opp.y, { count: 50, spread: 300, life: 0.9, color: '#ffee99', color2: '#ffffff', size: 5 });
@@ -2760,11 +2772,11 @@
             const targetSlot = target._slot !== undefined ? target._slot : undefined;
             window.Multiplayer.send({
                 type: 'hit', damage: damage, spell: spell,
-                x: target.x, y: target.y,
+                nx: target.x / cachedSize.w,
+                ny: target.y / cachedSize.h,
                 target: targetSlot
             });
             spawnDamageNumber(target.x, target.y, damage, proj.critical);
-            // 預估: 本端先扣對應 target
             applyLocalDamageToTarget(target, damage);
             triggerShake(proj.critical ? 5 : 2, 0.1);
             window.UI.playSfx('hit');
@@ -2774,7 +2786,8 @@
             const damage = proj.damage;
             window.Multiplayer.send({
                 type: 'hit', damage: damage, spell: 'meteor',
-                x: target.x, y: target.y,
+                nx: target.x / cachedSize.w,
+                ny: target.y / cachedSize.h,
                 target: target._slot
             });
             spawnDamageNumber(target.x, target.y, damage, proj.critical);
@@ -2790,7 +2803,8 @@
             const damage = proj.damage;
             window.Multiplayer.send({
                 type: 'hit', damage: damage, spell: 'poison',
-                x: target.x, y: target.y,
+                nx: target.x / cachedSize.w,
+                ny: target.y / cachedSize.h,
                 target: target._slot
             });
             spawnDamageNumber(target.x, target.y - 10, damage, false);
@@ -2806,6 +2820,7 @@
         window.Particles.update(dt);
 
         // 送自身狀態 (~20hz) — 2v2 需附 slot 和 name
+        // 使用歸一化座標 (0-1) 以避免雙方畫布尺寸不同時位置對不上
         mp.sendTimer += dt;
         if (mp.sendTimer > 0.05) {
             mp.sendTimer = 0;
@@ -2813,7 +2828,8 @@
                 type: 'state',
                 slot: mp.mySlot,
                 name: mp.myName,
-                x: game.player.x, y: game.player.y,
+                nx: game.player.x / cachedSize.w,
+                ny: game.player.y / cachedSize.h,
                 hp: game.player.hp, maxHp: game.player.maxHp
             });
         }
@@ -3757,16 +3773,20 @@
                 if (game.infinite) startInfinite();
                 else startLevel(game.level);
                 break;
-            case 'quit':
+            case 'quit': {
                 document.getElementById('pause-menu').classList.add('hidden');
                 window.UI.hideResult();
                 window.UI.hideUpgrade();
-                window.UI.showScreen('main-menu');
+                // 回到對應的子選單, 不直接回主選單
+                const target = game.menuContext === 'mp'
+                    ? 'mp-mode-select'
+                    : (game.menuContext === 'sp' ? 'sp-menu' : 'main-menu');
+                window.UI.showScreen(target);
                 game.state = 'menu';
-                game.menuContext = null;
                 window.UI.stopBgm();
                 window.UI.showControlsHint(false);
                 break;
+            }
             case 'next-level':
                 if (game.level < window.Enemies.TOTAL_LEVELS) {
                     window.UI.hideResult();
