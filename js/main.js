@@ -1359,8 +1359,13 @@
                     if (!usedSlots.has(s)) { assignSlot = s; break; }
                 }
                 if (assignSlot === -1) return;
-                // 2v2 預設: 0&2 vs 1&3 (房主可以之後按鈕換)
-                const team = assignSlot % 2;
+                // 依目前兩隊人數 (包含自己 + 已連線玩家) 指派到較少的那隊, 保證 2 vs 2
+                let t0 = (game.mp.myTeam === 0) ? 1 : 0;
+                let t1 = (game.mp.myTeam === 1) ? 1 : 0;
+                for (const sKey in game.mp.players) {
+                    if (game.mp.players[sKey].team === 0) t0++; else t1++;
+                }
+                const team = t0 <= t1 ? 0 : 1;
                 game.mp.players[assignSlot] = {
                     slot: assignSlot, team: team, name: 'P' + assignSlot,
                     x: 0, y: 0, hp: 100, maxHp: 100,
@@ -1558,11 +1563,22 @@
 
         // 空 slot (尚未加入)
         const capacity = is2v2 ? 4 : 2;
+        // 2v2 以目前兩隊填入情況做預測, 讓空位補到較少的隊
+        let t0Filled = 0, t1Filled = 0;
+        for (const k in allSlots) {
+            if (allSlots[k].team === 0) t0Filled++; else t1Filled++;
+        }
         for (let s = 0; s < capacity; s++) {
             if (!allSlots[s]) {
-                // 預測隊伍 (依 slot 奇偶)
+                let predictedTeam;
+                if (is2v2) {
+                    if (t0Filled < 2) { predictedTeam = 0; t0Filled++; }
+                    else              { predictedTeam = 1; t1Filled++; }
+                } else {
+                    predictedTeam = s % 2;
+                }
                 allSlots[s] = {
-                    slot: s, team: s % 2,
+                    slot: s, team: predictedTeam,
                     name: '(空位)', isHost: false,
                     connected: false, isSelf: false
                 };
@@ -1596,21 +1612,49 @@
         }
     }
 
-    // 房主: 把某 slot 換到另一隊
+    // 取得指定 slot 當前隊伍 (self / player)
+    function getSlotTeam(slot) {
+        if (slot === game.mp.mySlot) return game.mp.myTeam;
+        if (game.mp.players[slot]) return game.mp.players[slot].team;
+        return null;
+    }
+    function setSlotTeam(slot, team) {
+        if (slot === game.mp.mySlot) game.mp.myTeam = team;
+        else if (game.mp.players[slot]) game.mp.players[slot].team = team;
+    }
+
+    // 房主: 把某 slot 換隊; 2v2 會自動與對面一位互換, 保持 2 vs 2
     function hostSwapTeam(slot) {
         const mp = game.mp;
         if (!window.Multiplayer.isHost()) return;
-        let newTeam;
-        if (slot === mp.mySlot) {
-            mp.myTeam = 1 - mp.myTeam;
-            newTeam = mp.myTeam;
-        } else if (mp.players[slot]) {
-            mp.players[slot].team = 1 - mp.players[slot].team;
-            newTeam = mp.players[slot].team;
-        } else return;
-        // 通知所有人
-        window.Multiplayer.send({ type: 'teamSwap', slot: slot, team: newTeam });
-        // 同時 broadcast lobby 確保同步
+        const currentTeam = getSlotTeam(slot);
+        if (currentTeam === null) return;
+        const newTeam = 1 - currentTeam;
+
+        if (mp.teamMode === '2v2') {
+            // 統計目標隊伍目前人數 (排除正在被換的 slot)
+            let targetCount = 0;
+            const newTeamMembers = [];
+            if (mp.mySlot !== slot && mp.myTeam === newTeam) {
+                targetCount++;
+                newTeamMembers.push(mp.mySlot);
+            }
+            for (const s in mp.players) {
+                const sNum = parseInt(s, 10);
+                if (sNum !== slot && mp.players[s].team === newTeam) {
+                    targetCount++;
+                    newTeamMembers.push(sNum);
+                }
+            }
+            // 已滿 → 找搭檔反向換
+            if (targetCount >= 2) {
+                const partner = newTeamMembers[0];
+                if (partner === undefined) return;
+                setSlotTeam(partner, currentTeam);
+            }
+        }
+
+        setSlotTeam(slot, newTeam);
         broadcastLobby();
         renderRoomSlots();
         window.UI.playSfx('ui');
