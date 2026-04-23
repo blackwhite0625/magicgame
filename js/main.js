@@ -1852,65 +1852,101 @@
     // ==== 大亂鬥: 自動加入公開戰場 ====
     // 不需建房 / 不需輸入房號, 選完技能直接入場。
     // 策略: 先 join 固定 ID "BRAWL1", 失敗 (任何錯誤) 則自己當 host。
+    // 大亂鬥自動加入狀態 (autoJoinBrawl 期間共享)
+    let _brawlAutoJoin = null;
+
     function autoJoinBrawl() {
         const BRAWL_CODE = 'BRAWL1';
-        // 顯示專屬 loading overlay (不要用 mp-lobby, 以免露出創建/加入房間按鈕)
+        const JOIN_TIMEOUT = 5000;     // join 後 5 秒仍沒收到 assignSlot → 放棄, 自己當 host
+        const HOST_TIMEOUT = 6000;     // host 註冊 6 秒沒 open → 放棄
+        const MAX_TRIES = 5;
+
         const overlay = document.getElementById('brawl-connecting');
         const statusEl = document.getElementById('brawl-connecting-status');
         if (overlay) overlay.classList.remove('hidden');
-        if (statusEl) statusEl.textContent = '正在尋找戰場...';
 
         setupMpHandlers();
         game.mp.players = {};
 
-        let tried = 0;
-        const MAX_TRIES = 4;
-        let cancelled = false;
+        // 共享狀態; 若上一輪尚未結束, 先取消
+        if (_brawlAutoJoin) _brawlAutoJoin.cancelled = true;
+        const S = { cancelled: false, tried: 0, timer: null };
+        _brawlAutoJoin = S;
 
-        function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+        function setStatus(t) {
+            if (statusEl) statusEl.textContent = t;
+        }
+
+        function clearTimer() {
+            if (S.timer) { clearTimeout(S.timer); S.timer = null; }
+        }
 
         function attemptJoin() {
-            if (cancelled) return;
-            tried++;
-            setStatus('嘗試加入戰場... (第 ' + tried + ' 次)');
+            if (S.cancelled) return;
+            S.tried++;
+            setStatus('嘗試加入戰場... (第 ' + S.tried + ' 次)');
             game.mp.isHost = false;
+            try { window.Multiplayer.disconnect(); } catch (e) {}
             window.Multiplayer.join(BRAWL_CODE, (err) => {
-                if (cancelled) return;
-                // 任何 join 錯誤都視為「沒人當 host」, 自己當
-                if (tried < MAX_TRIES) {
-                    setStatus('沒有戰場, 嘗試當房主...');
+                if (S.cancelled) return;
+                clearTimer();
+                if (S.tried < MAX_TRIES) {
+                    setStatus('沒有戰場 (' + (err || '未知') + '), 嘗試當房主...');
                     setTimeout(attemptHost, 400);
                 } else {
                     brawlConnectFailed(err);
                 }
             });
+            // 若 JOIN_TIMEOUT 內 assignSlot 還沒來 → 放棄該 join, 換 host
+            clearTimer();
+            S.timer = setTimeout(() => {
+                if (S.cancelled || game.mp.active) return;
+                setStatus('戰場無回應, 嘗試當房主...');
+                if (S.tried < MAX_TRIES) attemptHost();
+                else brawlConnectFailed('host 無回應');
+            }, JOIN_TIMEOUT);
         }
 
         function attemptHost() {
-            if (cancelled) return;
-            tried++;
-            setStatus('建立戰場中... (第 ' + tried + ' 次)');
+            if (S.cancelled) return;
+            S.tried++;
+            setStatus('建立戰場中... (第 ' + S.tried + ' 次)');
             game.mp.isHost = true;
+            try { window.Multiplayer.disconnect(); } catch (e) {}
             window.Multiplayer.host((code) => {
-                if (cancelled) return;
-                // 成功當房主 → 立刻開戰 + 關閉 loading
+                if (S.cancelled) return;
+                clearTimer();
                 if (overlay) overlay.classList.add('hidden');
                 brawlStartMatch(true);
             }, (err) => {
-                if (cancelled) return;
-                if (tried < MAX_TRIES) {
-                    // 可能別人同時搶 host → 再試 join
-                    setStatus('戰場被搶, 重試加入...');
+                if (S.cancelled) return;
+                clearTimer();
+                if (S.tried < MAX_TRIES) {
+                    // unavailable-id 或 其他錯誤 → 再試 join
+                    setStatus('戰場被搶 (' + (err || '?') + '), 重試加入...');
                     setTimeout(attemptJoin, 500);
                 } else {
                     brawlConnectFailed(err);
                 }
             }, 0, BRAWL_CODE);
+            // host 註冊逾時保護
+            clearTimer();
+            S.timer = setTimeout(() => {
+                if (S.cancelled || game.mp.active) return;
+                if (S.tried < MAX_TRIES) {
+                    setStatus('建立逾時, 重試加入...');
+                    attemptJoin();
+                } else {
+                    brawlConnectFailed('host 建立逾時');
+                }
+            }, HOST_TIMEOUT);
         }
 
         function brawlConnectFailed(err) {
-            setStatus('連線失敗: ' + (err || '未知錯誤'));
+            clearTimer();
+            setStatus('連線失敗: ' + (err || '未知'));
             setTimeout(() => {
+                if (S.cancelled) return;
                 if (overlay) overlay.classList.add('hidden');
                 window.UI.showScreen('mp-mode-select');
             }, 2500);
@@ -1920,7 +1956,8 @@
         const cancelBtn = document.getElementById('brawl-connecting-cancel');
         if (cancelBtn) {
             cancelBtn.onclick = () => {
-                cancelled = true;
+                S.cancelled = true;
+                clearTimer();
                 if (overlay) overlay.classList.add('hidden');
                 try { window.Multiplayer.disconnect(); } catch (e) {}
                 window.UI.showScreen('mp-mode-select');
@@ -1931,17 +1968,20 @@
         attemptJoin();
     }
 
-    // 為了讓 guest 入場後關掉 loading overlay, 在 beginMpMatch 呼叫前判斷
-    // (這部份在 assignSlot handler 調用 beginMpMatch 後, game-screen 顯示會蓋掉 overlay 但我們還是該手動清除)
+    // 當 brawl guest 收到 assignSlot 成功入場 → 關閉 loading + 取消自動加入計時器
     function hideBrawlConnecting() {
+        if (_brawlAutoJoin) {
+            _brawlAutoJoin.cancelled = true;
+            if (_brawlAutoJoin.timer) { clearTimeout(_brawlAutoJoin.timer); _brawlAutoJoin.timer = null; }
+        }
         const overlay = document.getElementById('brawl-connecting');
         if (overlay) overlay.classList.add('hidden');
     }
 
     // 大亂鬥: 當連線成功後立刻開始對戰 (不等 lobby 確認)
     function brawlStartMatch(asHost) {
-        // 確保只被呼叫一次
         if (game.mp.active) return;
+        hideBrawlConnecting();  // 取消 autoJoinBrawl timer, 關 overlay
         beginMpMatch(asHost);
     }
 
