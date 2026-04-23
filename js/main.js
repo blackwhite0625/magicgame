@@ -1771,6 +1771,19 @@
                 return;
             }
             if (game.mp.active) {
+                // brawl: 任一玩家斷線只是少一人, 不結束戰場
+                if (game.mp.teamMode === 'brawl') {
+                    const peerId = conn && conn.peer;
+                    for (const s in game.mp.players) {
+                        if (game.mp.players[s].connId === peerId) {
+                            delete game.mp.players[s];
+                            break;
+                        }
+                    }
+                    // 若沒有其他玩家 (host 的 conn 斷了), 仍保留戰場讓玩家自由離開
+                    updateBrawlHud();
+                    return;
+                }
                 endMpMatch('對手已離線', 'forfeit-opp-leave');
             } else {
                 showMpStatus('對手已斷線', true);
@@ -1933,7 +1946,8 @@
     }
 
     function leaveMp() {
-        window.Multiplayer.send({ type: 'leave' });
+        // 送帶 slot 的 leave 訊息 (brawl 對方需要知道誰走了才能從 mp.players 移除)
+        window.Multiplayer.send({ type: 'leave', slot: game.mp.mySlot });
         window.Multiplayer.disconnect();
         game.mp.active = false;
         game.mp.paused = false;
@@ -2392,12 +2406,21 @@
                 }
                 break;
             case 'leave':
+                // brawl: 對方離開只是少一個人, 不結束比賽
+                if (mp.teamMode === 'brawl') {
+                    if (data.slot !== undefined && mp.players[data.slot]) {
+                        delete mp.players[data.slot];
+                        updateBrawlHud();
+                    }
+                    break;
+                }
                 endMpMatch('對手離開了', 'forfeit');
                 break;
             case 'surrender': {
                 if (!game.mp.active) break;
+                // brawl: 不處理投降 (brawl 沒有投降機制)
+                if (mp.teamMode === 'brawl') break;
                 const need = Math.ceil(mp.rounds / 2);
-                // 2v2: 若隊友投降 — 我也輸了; 對手投降 — 我贏
                 if (data.team !== undefined && mp.teamMode === '2v2' && data.team === mp.myTeam) {
                     mp.oppWins = Math.max(mp.oppWins, need);
                     endMpMatch('你的隊友投降了...', 'teammate-surrender');
@@ -2408,9 +2431,9 @@
                 break;
             }
             case 'rematch':
-                // 對方點了返回房間
+                // brawl: 不用 rematch (沒有房間概念)
+                if (mp.teamMode === 'brawl') break;
                 if (game.mp.active) {
-                    // 若我方還在對戰中, 視為對方投降
                     endMpMatch('對手結束對戰', 'forfeit');
                 } else {
                     // 我也回到房間
@@ -2834,6 +2857,7 @@
 
     function endMpMatch(title, reason) {
         const mp = game.mp;
+        const wasBrawl = mp.teamMode === 'brawl';
         mp.active = false;
         mp.paused = false;
         stopPingLoop();
@@ -2844,6 +2868,12 @@
         if (brawlScoreEl) brawlScoreEl.classList.add('hidden');
         if (brawlRespawnEl) brawlRespawnEl.classList.add('hidden');
         game.state = 'menu';
+        // brawl: 不彈任何結算視窗, 直接斷線 + 回主選單
+        if (wasBrawl) {
+            try { window.Multiplayer.disconnect(); } catch (e) {}
+            window.UI.showScreen('main-menu');
+            return;
+        }
         let stats;
         if (mp.teamMode === 'brawl') {
             const myKills = mp.brawlKills[mp.mySlot] || 0;
