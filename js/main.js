@@ -2491,18 +2491,28 @@
 
     function spawnRemoteCast(data) {
         // 將對手端的施法還原到本地視覺
-        // 2v2: 依 data.slot 找到施法者位置; 1v1: 用 mp.opponent
         const me = game.player;
-        let caster;
-        if (game.mp.teamMode === '2v2' && data.slot !== undefined && game.mp.players[data.slot]) {
-            caster = game.mp.players[data.slot];
-        } else {
-            caster = game.mp.opponent;
-        }
-        const opp = caster;
         const castWD = getWorldDims();
-        const tx = (data.ntx !== undefined ? data.ntx * castWD.w : me.x) + (Math.random() - 0.5) * 30;
-        const ty = (data.nty !== undefined ? data.nty * castWD.h : me.y) + (Math.random() - 0.5) * 30;
+        // bug fix: 施法者位置必須用 cast 訊息帶的 nx/ny (施法當下的位置),
+        // 不能用 mp.players[slot].x/y (那是之後 state 訊息更新的位置, 有延遲).
+        // 否則技能會從「玩家現在的位置」飛出, 但玩家已經走開了 → 看起來技能從空地飄過來.
+        const tm = game.mp.teamMode;
+        let fallbackCaster;
+        if ((tm === '2v2' || tm === 'brawl') && data.slot !== undefined && game.mp.players[data.slot]) {
+            fallbackCaster = game.mp.players[data.slot];
+        } else {
+            fallbackCaster = game.mp.opponent;
+        }
+        // 優先用 cast 訊息的 nx/ny 作為施法起點
+        const casterX = (data.nx !== undefined && isFinite(Number(data.nx)))
+            ? Number(data.nx) * castWD.w
+            : fallbackCaster.x;
+        const casterY = (data.ny !== undefined && isFinite(Number(data.ny)))
+            ? Number(data.ny) * castWD.h
+            : fallbackCaster.y;
+        const opp = { x: casterX, y: casterY };
+        const tx = (data.ntx !== undefined ? Number(data.ntx) * castWD.w : me.x) + (Math.random() - 0.5) * 30;
+        const ty = (data.nty !== undefined ? Number(data.nty) * castWD.h : me.y) + (Math.random() - 0.5) * 30;
         const name = data.spell;
         // 播放遠端施法音效 (即使不是直接對我也聽得到對戰氣氛)
         if (name && window.UI && window.UI.playSfx) {
