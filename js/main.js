@@ -532,7 +532,8 @@
     }
 
     // ==== 召喚系統 (魔靈盟友) ====
-    function spawnAlly(x, y, hp, damage, life) {
+    function spawnAlly(x, y, hp, damage, life, opts) {
+        opts = opts || {};
         game.allies.push({
             x: x, y: y,
             vx: 0, vy: 0,
@@ -543,7 +544,12 @@
             maxLife: life,
             attackCd: 0,
             bobPhase: Math.random() * Math.PI * 2,
-            wandAngle: Math.random() * Math.PI * 2
+            wandAngle: Math.random() * Math.PI * 2,
+            // 遠端魔靈: 純視覺, 不攻擊不移動威脅, 只圍繞 owner 飄
+            _remote: !!opts.remote,
+            ownerSlot: opts.ownerSlot != null ? opts.ownerSlot : null,
+            ownerX: opts.ownerX != null ? opts.ownerX : x,
+            ownerY: opts.ownerY != null ? opts.ownerY : y
         });
     }
 
@@ -567,6 +573,22 @@
                     color: '#ccaaff', color2: '#ffffff', size: 4
                 });
                 game.allies.splice(i, 1);
+                continue;
+            }
+            // 遠端魔靈: 純視覺, 只圍繞 owner (施法者) 飄, 不攻擊
+            // 傷害由 owner 客戶端模擬並透過 hit 訊息傳達
+            if (a._remote) {
+                // 更新 owner 位置 (追蹤 mp.players[ownerSlot])
+                let ownerPos = { x: a.ownerX, y: a.ownerY };
+                if (a.ownerSlot != null && game.mp.players[a.ownerSlot]) {
+                    ownerPos = game.mp.players[a.ownerSlot];
+                }
+                a.wandAngle += dt * 1.2;
+                const tx = ownerPos.x + Math.cos(a.wandAngle) * 80;
+                const ty = ownerPos.y + Math.sin(a.wandAngle) * 80;
+                const ddx = tx - a.x, ddy = ty - a.y;
+                a.x += ddx * dt * 3;
+                a.y += ddy * dt * 3;
                 continue;
             }
             // 找最近敵人
@@ -2702,6 +2724,17 @@
                         color: '#bb88ff', color2: '#ffffff', drag: 0.93
                     });
                 }
+                // 生成 1 隻「遠端魔靈」讓對方看得到對手的召喚物
+                // PvP 平衡值 (對應 castSpell summon 分支的 40%/60%/70%)
+                const summonLife = (window.Spells.CONFIG.summon.summonLife || 6) * 0.7;
+                spawnAlly(
+                    opp.x + Math.cos(Math.random() * Math.PI * 2) * 60,
+                    opp.y + Math.sin(Math.random() * Math.PI * 2) * 60,
+                    Math.round((window.Spells.CONFIG.summon.summonHp || 40) * 0.6),
+                    0,  // _remote 不攻擊, damage 無意義
+                    summonLife,
+                    { remote: true, ownerSlot: data.slot != null ? data.slot : null, ownerX: opp.x, ownerY: opp.y }
+                );
                 break;
             }
             default:
