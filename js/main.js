@@ -1050,6 +1050,10 @@
         const target = findNearestEnemy();
         const hi = level >= 3;      // 等級 3+ 更華麗特效
         const max = level >= 5;     // 滿級最華麗
+        // 記錄施法時間戳 — drawPlayer 據此播放施法姿態 (300ms 內)
+        p.lastCastTime = performance.now();
+        // 記錄施法朝向 (最近敵人方向)
+        p.lastCastAngle = target ? Math.atan2(target.y - p.y, target.x - p.x) : 0;
 
         switch (name) {
             case 'fireball': {
@@ -2493,26 +2497,33 @@
         // 將對手端的施法還原到本地視覺
         const me = game.player;
         const castWD = getWorldDims();
-        // bug fix: 施法者位置必須用 cast 訊息帶的 nx/ny (施法當下的位置),
-        // 不能用 mp.players[slot].x/y (那是之後 state 訊息更新的位置, 有延遲).
-        // 否則技能會從「玩家現在的位置」飛出, 但玩家已經走開了 → 看起來技能從空地飄過來.
+        // 關鍵: 施法起點用 mp.players[slot] 的 "當前追蹤位置" 而不是 cast 訊息的 nx/ny
+        // 原因: 玩家精靈每 50ms state 訊息更新一次, 是 "最新位置"; 若用 cast 訊息的
+        // 歷史位置 (施法瞬間快照) 建立投射物, 會跟畫面上的精靈錯位, 視覺上像從
+        // 空地飛出. 用追蹤位置雖然不是絕對精準, 但至少技能會從精靈身上射出.
         const tm = game.mp.teamMode;
-        let fallbackCaster;
+        let caster;
         if ((tm === '2v2' || tm === 'brawl') && data.slot !== undefined && game.mp.players[data.slot]) {
-            fallbackCaster = game.mp.players[data.slot];
+            caster = game.mp.players[data.slot];
         } else {
-            fallbackCaster = game.mp.opponent;
+            caster = game.mp.opponent;
         }
-        // 優先用 cast 訊息的 nx/ny 作為施法起點
-        const casterX = (data.nx !== undefined && isFinite(Number(data.nx)))
-            ? Number(data.nx) * castWD.w
-            : fallbackCaster.x;
-        const casterY = (data.ny !== undefined && isFinite(Number(data.ny)))
-            ? Number(data.ny) * castWD.h
-            : fallbackCaster.y;
-        const opp = { x: casterX, y: casterY };
-        const tx = (data.ntx !== undefined ? Number(data.ntx) * castWD.w : me.x) + (Math.random() - 0.5) * 30;
-        const ty = (data.nty !== undefined ? Number(data.nty) * castWD.h : me.y) + (Math.random() - 0.5) * 30;
+        const opp = { x: caster.x, y: caster.y };
+        // 目標位置: 計算 cast 訊息中 ntx/nty 相對於施法者的偏移, 再套用到當前精靈位置
+        // 這樣技能方向仍然正確, 起點也貼在精靈身上
+        let tx, ty;
+        if (data.ntx !== undefined && data.nx !== undefined) {
+            // 用相對向量保持方向
+            const castX = Number(data.nx) * castWD.w;
+            const castY = Number(data.ny) * castWD.h;
+            const targetX = Number(data.ntx) * castWD.w;
+            const targetY = Number(data.nty) * castWD.h;
+            tx = caster.x + (targetX - castX) + (Math.random() - 0.5) * 30;
+            ty = caster.y + (targetY - castY) + (Math.random() - 0.5) * 30;
+        } else {
+            tx = (data.ntx !== undefined ? Number(data.ntx) * castWD.w : me.x) + (Math.random() - 0.5) * 30;
+            ty = (data.nty !== undefined ? Number(data.nty) * castWD.h : me.y) + (Math.random() - 0.5) * 30;
+        }
         const name = data.spell;
         // 播放遠端施法音效 (即使不是直接對我也聽得到對戰氣氛)
         if (name && window.UI && window.UI.playSfx) {
@@ -2877,6 +2888,9 @@
         document.getElementById('highscore-display').classList.add('hidden');
         document.getElementById('level-display').classList.add('hidden');
         document.getElementById('gold-display').classList.add('hidden');
+        // PvP 模式一律隱藏分數 (避免跟 Ping/排行榜重疊)
+        const scoreDisp = document.getElementById('score-display');
+        if (scoreDisp) scoreDisp.classList.add('hidden');
         // 大亂鬥: 顯示擊殺計分 HUD, 隱藏復活倒數
         const brawlScoreEl = document.getElementById('brawl-score');
         const brawlRespawnEl = document.getElementById('brawl-respawn');
@@ -3133,6 +3147,9 @@
         if (pingEl) pingEl.classList.add('hidden');
         if (brawlScoreEl) brawlScoreEl.classList.add('hidden');
         if (brawlRespawnEl) brawlRespawnEl.classList.add('hidden');
+        // SP 模式需要分數顯示 (PvP 會隱藏)
+        const scoreDisp = document.getElementById('score-display');
+        if (scoreDisp) scoreDisp.classList.remove('hidden');
     }
 
     function endLevel(victory) {
@@ -3467,6 +3484,13 @@
         const px = p.x | 0;
         const r = p.radius;
         const TWO_PI = 6.283185307179586;
+        // 施法脈衝: 0-1, 300ms 內衰減
+        const castMs = p.lastCastTime ? performance.now() - p.lastCastTime : Infinity;
+        const castPulse = castMs < 300 ? (1 - castMs / 300) : 0;
+        // 施法時整體放大 (0-1 之間增加最多 12%)
+        const scaleBoost = 1 + castPulse * 0.12;
+        // 施法時微幅傾斜朝目標
+        const castTilt = castPulse * 0.15 * Math.sign(Math.cos(p.lastCastAngle || 0));
         ctx.save();
 
         // 陰影
@@ -3475,13 +3499,24 @@
         ctx.ellipse(px, py + r + 18, r * 0.85, 8, 0, 0, TWO_PI);
         ctx.fill();
 
-        // 魔法光環 (translate + 快取漸層)
+        // 施法 + 縮放套用: translate 到玩家中心 → scale / rotate
+        if (castPulse > 0 || scaleBoost !== 1) {
+            ctx.translate(px, py);
+            ctx.scale(scaleBoost, scaleBoost);
+            if (castTilt) ctx.rotate(castTilt);
+            ctx.translate(-px, -py);
+        }
+
+        // 魔法光環 (translate + 快取漸層) — 施法時光環加大加亮
         ctx.globalCompositeOperation = 'lighter';
         ctx.translate(px, py);
         ctx.fillStyle = getPlayerAuraGrad(r);
+        const auraR = r + 20 + castPulse * 30;
+        ctx.globalAlpha = 1 + castPulse * 0.3;
         ctx.beginPath();
-        ctx.arc(0, 0, r + 20, 0, TWO_PI);
+        ctx.arc(0, 0, auraR, 0, TWO_PI);
         ctx.fill();
+        ctx.globalAlpha = 1;
         ctx.translate(-px, -py);
         ctx.globalCompositeOperation = 'source-over';
 
@@ -3582,17 +3617,27 @@
             ctx.lineTo(staffX + 4, ty);
             ctx.stroke();
         }
-        // 水晶光暈
+        // 水晶光暈 — 施法時加大 + 加亮
         ctx.globalCompositeOperation = 'lighter';
         const cx = staffX - r * 0.05, cy = staffTop;
-        const crysGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.5);
-        crysGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-        crysGrad.addColorStop(0.35, 'rgba(180, 120, 255, 0.7)');
+        const crystalGlowR = r * 0.5 * (1 + castPulse * 1.2);
+        const crysGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, crystalGlowR);
+        crysGrad.addColorStop(0, 'rgba(255, 255, 255, ' + (0.95) + ')');
+        crysGrad.addColorStop(0.35, 'rgba(180, 120, 255, ' + (0.7 + castPulse * 0.25) + ')');
         crysGrad.addColorStop(1, 'rgba(100, 50, 160, 0)');
         ctx.fillStyle = crysGrad;
         ctx.beginPath();
-        ctx.arc(cx, cy, r * 0.5, 0, TWO_PI);
+        ctx.arc(cx, cy, crystalGlowR, 0, TWO_PI);
         ctx.fill();
+        // 施法時額外 "光爆" 閃光
+        if (castPulse > 0.3) {
+            ctx.globalAlpha = (castPulse - 0.3) * 1.4;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(cx, cy, r * 0.8 * castPulse, 0, TWO_PI);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
         // 水晶本體
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = '#aa66ff';

@@ -825,8 +825,21 @@
             const e = enemies[i];
             if (e.dead) continue;
             const bob = Math.sin(e.bobPhase) * 4;
+            // 閒置呼吸縮放 — 每隻怪物相位不同, 避免整齊劃一的 AI 感
+            const breathe = 1 + Math.sin(e.bobPhase * 0.8) * 0.03;
+            // 蓄力時抖動 — 施法前有 "抖動警示"
+            const castShake = e.casting ? {
+                x: (Math.random() - 0.5) * 3,
+                y: (Math.random() - 0.5) * 3
+            } : { x: 0, y: 0 };
             const drawFn = DRAW_FNS[e.type];
-            if (drawFn) drawFn(ctx, e.x, e.y + bob, e.radius);
+            if (drawFn) {
+                ctx.save();
+                ctx.translate(e.x + castShake.x, e.y + bob + castShake.y);
+                ctx.scale(breathe, breathe);
+                drawFn(ctx, 0, 0, e.radius);
+                ctx.restore();
+            }
 
             // 受傷閃白
             if (e.hitFlash > 0) {

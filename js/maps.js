@@ -162,69 +162,162 @@
     // 大亂鬥專屬背景: 四象限融合 (左上草原, 右上沼澤, 左下火山, 右下混合)
     function drawBrawlBackground(ctx, w, h, P) {
         const halfW = w / 2, halfH = h / 2;
-        // 左上 — 草原 (明亮綠色)
+        // 四象限基底漸層
         drawQuadrantGrad(ctx, 0, 0, halfW, halfH, P.grassSky[0], P.grassGround[1]);
-        // 右上 — 沼澤 (墨綠陰沉)
         drawQuadrantGrad(ctx, halfW, 0, halfW, halfH, P.swampSky[0], P.swampGround[1]);
-        // 左下 — 火山 (赤紅焦黑)
         drawQuadrantGrad(ctx, 0, halfH, halfW, halfH, P.volcanoSky[0], P.volcanoGround[1]);
-        // 右下 — 神祕紫 (混合區)
-        drawQuadrantGrad(ctx, halfW, halfH, halfW, halfH, '#4a2a5e', '#1a0a24');
+        drawQuadrantGrad(ctx, halfW, halfH, halfW, halfH, '#3d2050', '#150820');
 
-        // 中央圓形聚光 — 提示是競技場中心
+        // --- 紋理層 1: 大範圍細點噪 (給地面質感) ---
         ctx.save();
-        const cg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.min(w, h) * 0.32);
-        cg.addColorStop(0, 'rgba(255, 220, 180, 0.18)');
-        cg.addColorStop(0.6, 'rgba(255, 180, 130, 0.08)');
+        ctx.globalAlpha = 0.08;
+        for (let i = 0; i < 400; i++) {
+            const x = (i * 37 + 13) % w;
+            const y = (i * 89 + 29) % h;
+            const quad = (x < halfW ? 0 : 1) + (y < halfH ? 0 : 2);
+            const colors = ['#a8c878', '#4a6238', '#5a2818', '#6a4088'];
+            ctx.fillStyle = colors[quad];
+            ctx.fillRect(x, y, 2, 2);
+        }
+        ctx.restore();
+
+        // --- 中央光圈聚光 + 動態光暈 ---
+        ctx.save();
+        const cg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.min(w, h) * 0.28);
+        cg.addColorStop(0, 'rgba(255, 235, 200, 0.22)');
+        cg.addColorStop(0.5, 'rgba(255, 190, 140, 0.10)');
         cg.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = cg;
         ctx.fillRect(0, 0, w, h);
         ctx.restore();
 
-        // 象限分界線 (半透明, 提示玩家)
+        // --- 象限分界柔化 (不要硬線) ---
         ctx.save();
-        ctx.globalAlpha = 0.15;
-        ctx.strokeStyle = '#ffffff';
+        // 水平融合帶
+        const bgH = ctx.createLinearGradient(0, halfH - 80, 0, halfH + 80);
+        bgH.addColorStop(0, 'rgba(0,0,0,0)');
+        bgH.addColorStop(0.5, 'rgba(40, 30, 60, 0.4)');
+        bgH.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = bgH;
+        ctx.fillRect(0, halfH - 80, w, 160);
+        // 垂直融合帶
+        const bgV = ctx.createLinearGradient(halfW - 80, 0, halfW + 80, 0);
+        bgV.addColorStop(0, 'rgba(0,0,0,0)');
+        bgV.addColorStop(0.5, 'rgba(40, 30, 60, 0.4)');
+        bgV.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = bgV;
+        ctx.fillRect(halfW - 80, 0, 160, h);
+        ctx.restore();
+
+        // --- 各象限生態細節 ---
+        // 左上: 草原 (花朵 + 草叢)
+        for (let i = 0; i < 28; i++) {
+            const x = (i * 41 + 7) % halfW;
+            const y = (i * 73 + 11) % halfH;
+            // 花: 5 瓣
+            ctx.save();
+            ctx.translate(x, y);
+            const cFlower = i % 4 === 0 ? '#ffe066' : (i % 4 === 1 ? '#ff88aa' : (i % 4 === 2 ? '#ffffff' : '#aaccff'));
+            ctx.fillStyle = cFlower;
+            for (let j = 0; j < 5; j++) {
+                const a = (j / 5) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * 2, Math.sin(a) * 2, 1.6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.fillStyle = '#ffdd44';
+            ctx.beginPath();
+            ctx.arc(0, 0, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+        // 草葉
+        ctx.strokeStyle = 'rgba(80, 140, 60, 0.5)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 40; i++) {
+            const x = (i * 31 + 5) % halfW;
+            const y = (i * 53 + 7) % halfH;
+            ctx.beginPath();
+            ctx.moveTo(x, y + 4);
+            ctx.quadraticCurveTo(x + 2, y, x + 4, y + 4);
+            ctx.stroke();
+        }
+
+        // 右上: 沼澤 (層層霧氣 + 斑苔)
+        for (let band = 0; band < 5; band++) {
+            const y = (band * halfH / 5) + 8 + Math.sin(band) * 12;
+            ctx.fillStyle = 'rgba(130, 160, 130, ' + (0.10 + (band % 2) * 0.05) + ')';
+            ctx.fillRect(halfW, y, halfW, 20);
+        }
+        // 苔蘚斑點
+        for (let i = 0; i < 22; i++) {
+            const x = halfW + (i * 47 + 13) % halfW;
+            const y = (i * 61 + 7) % halfH;
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(90, 110, 60, 0.6)' : 'rgba(60, 90, 50, 0.5)';
+            ctx.beginPath();
+            ctx.arc(x, y, 2.5 + (i % 3), 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 左下: 火山 (熔岩裂縫 + 火花粒子)
+        ctx.strokeStyle = 'rgba(255, 80, 20, 0.6)';
         ctx.lineWidth = 2;
+        for (let i = 0; i < 6; i++) {
+            const x1 = (i * 70 + 30) % halfW;
+            const y1 = halfH + 30 + (i * 43) % (halfH - 60);
+            const x2 = x1 + 40 + (i * 17) % 50;
+            const y2 = y1 + 20 + (i * 23) % 40;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x1 + 15, y1 + 8);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        }
+        // 火花
+        for (let i = 0; i < 30; i++) {
+            const x = (i * 97) % halfW;
+            const y = halfH + ((i * 41) % halfH);
+            const bright = i % 3 === 0 ? '#ffee88' : (i % 3 === 1 ? '#ff5522' : '#ffaa44');
+            ctx.fillStyle = bright;
+            ctx.beginPath();
+            ctx.arc(x, y, 1.2 + (i % 3) * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 右下: 神祕紫域 (星空 + 魔法符號)
+        for (let i = 0; i < 25; i++) {
+            const x = halfW + ((i * 83) % halfW);
+            const y = halfH + ((i * 57) % halfH);
+            ctx.fillStyle = i % 3 === 0 ? '#ddaaff' : (i % 3 === 1 ? '#ffffff' : '#9966dd');
+            // 十字星
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.fillRect(-3, -0.5, 6, 1);
+            ctx.fillRect(-0.5, -3, 1, 6);
+            ctx.restore();
+        }
+        // 魔法陣殘影 (右下中央)
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.strokeStyle = '#bb88ff';
+        ctx.lineWidth = 2;
+        const rcX = halfW + halfW * 0.5, rcY = halfH + halfH * 0.5;
         ctx.beginPath();
-        ctx.moveTo(halfW, 0); ctx.lineTo(halfW, h);
-        ctx.moveTo(0, halfH); ctx.lineTo(w, halfH);
+        ctx.arc(rcX, rcY, 80, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(rcX, rcY, 60, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
 
-        // 左上象限: 草原花點
-        for (let i = 0; i < 18; i++) {
-            const x = (i * 43) % halfW;
-            const y = (i * 71) % halfH;
-            ctx.fillStyle = i % 3 === 0 ? '#ffe066' : (i % 3 === 1 ? '#ff88aa' : '#ffffff');
-            ctx.beginPath();
-            ctx.arc(x + 10, y + 10, 1.8, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // 右上象限: 沼澤霧
-        ctx.fillStyle = 'rgba(130, 150, 120, 0.18)';
-        for (let i = 0; i < 4; i++) {
-            const y = (i * halfH / 4) + 15;
-            ctx.fillRect(halfW, y, halfW, 22);
-        }
-        // 左下象限: 火山火花
-        for (let i = 0; i < 20; i++) {
-            const x = ((i * 97) % halfW);
-            const y = halfH + ((i * 41) % halfH);
-            ctx.fillStyle = i % 2 === 0 ? '#ff5522' : '#ffcc33';
-            ctx.beginPath();
-            ctx.arc(x, y, 1.4, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // 右下象限: 紫色魔光點
-        for (let i = 0; i < 15; i++) {
-            const x = halfW + ((i * 83) % halfW);
-            const y = halfH + ((i * 57) % halfH);
-            ctx.fillStyle = i % 2 === 0 ? '#bb77ff' : '#ffddff';
-            ctx.beginPath();
-            ctx.arc(x, y, 1.6, 0, Math.PI * 2);
-            ctx.fill();
-        }
+        // --- 整體最上層: 邊緣暗角 (vignette) 增添氛圍 ---
+        ctx.save();
+        const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.min(w, h) * 0.7);
+        vg.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        vg.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+        ctx.fillStyle = vg;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
 
         // 地形邊緣柔化 — 在分界線附近疊一點漸層
         ctx.save();
