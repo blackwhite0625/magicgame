@@ -77,41 +77,44 @@
         brawl: {
             id: 'brawl',
             name: '混沌戰場',
-            desc: '大亂鬥專用大地圖, 融合草原 / 沼澤 / 火山三種元素, 自由廝殺',
+            desc: '大亂鬥專用競技場, 融合草原 / 沼澤 / 火山三種元素',
+            // 4 個象限對應不同地形 palette, 由 drawBrawlBackground 分區繪製
             palette: {
-                sky: ['#4a3a52', '#6a5a6e'],        // 紫灰色混合天空
-                ground: ['#4a5a3a', '#2a2e1e'],     // 草地 + 暗土
-                accent: '#ff8844'
+                sky: ['#2a1a32', '#3a2a44'],
+                ground: ['#2a3a2a', '#1a1e14'],
+                accent: '#ff8844',
+                grassSky: ['#7ec7e0', '#a8ddd8'],
+                grassGround: ['#6cb04a', '#3d7834'],
+                swampSky: ['#2e3a42', '#1e2a32'],
+                swampGround: ['#3a4438', '#1a241e'],
+                volcanoSky: ['#4a1c0e', '#2a1208'],
+                volcanoGround: ['#3a1a10', '#1a0a06']
             },
             obstacles: [
-                // ===== 左上: 草原區 (岩石 + 灌木) =====
-                { type: 'circle', xP: 0.12, yP: 0.18, rP: 0.035, art: 'rock' },
-                { type: 'circle', xP: 0.24, yP: 0.12, rP: 0.03, art: 'bush' },
-                { type: 'circle', xP: 0.18, yP: 0.28, rP: 0.03, art: 'bush' },
-                { type: 'rect',   xP: 0.30, yP: 0.22, wP: 0.06, hP: 0.025, art: 'log' },
-                // ===== 右上: 沼澤區 (樹 + 泥灘) =====
-                { type: 'circle', xP: 0.72, yP: 0.15, rP: 0.045, art: 'tree' },
-                { type: 'circle', xP: 0.85, yP: 0.22, rP: 0.04, art: 'tree' },
-                { type: 'circle', xP: 0.78, yP: 0.30, rP: 0.05, art: 'puddle', passable: true },
-                { type: 'rect',   xP: 0.62, yP: 0.28, wP: 0.06, hP: 0.045, art: 'stump' },
-                // ===== 左下: 火山區 (黑岩 + 岩漿) =====
-                { type: 'rect',   xP: 0.12, yP: 0.65, wP: 0.08, hP: 0.06, art: 'blackrock' },
-                { type: 'circle', xP: 0.22, yP: 0.78, rP: 0.045, art: 'blackrock' },
-                { type: 'circle', xP: 0.08, yP: 0.82, rP: 0.055, art: 'lava', passable: true, damage: 10 },
-                // ===== 右下: 混合區 (樹 + 黑岩) =====
+                // 左上: 草原區 (岩石 + 灌木 + 小花)
+                { type: 'circle', xP: 0.14, yP: 0.18, rP: 0.040, art: 'rock' },
+                { type: 'circle', xP: 0.26, yP: 0.12, rP: 0.032, art: 'bush' },
+                { type: 'circle', xP: 0.18, yP: 0.32, rP: 0.030, art: 'bush' },
+                { type: 'rect',   xP: 0.32, yP: 0.24, wP: 0.07, hP: 0.028, art: 'log' },
+                // 右上: 沼澤區 (樹 + 泥灘)
+                { type: 'circle', xP: 0.72, yP: 0.15, rP: 0.050, art: 'tree' },
+                { type: 'circle', xP: 0.86, yP: 0.22, rP: 0.040, art: 'tree' },
+                { type: 'circle', xP: 0.78, yP: 0.32, rP: 0.060, art: 'puddle', passable: true },
+                { type: 'rect',   xP: 0.62, yP: 0.30, wP: 0.07, hP: 0.050, art: 'stump' },
+                // 左下: 火山區 (黑岩 + 岩漿)
+                { type: 'rect',   xP: 0.14, yP: 0.66, wP: 0.09, hP: 0.065, art: 'blackrock' },
+                { type: 'circle', xP: 0.24, yP: 0.80, rP: 0.048, art: 'blackrock' },
+                { type: 'circle', xP: 0.08, yP: 0.83, rP: 0.060, art: 'lava', passable: true, damage: 10 },
+                // 右下: 混合 (樹 + 黑岩)
                 { type: 'circle', xP: 0.78, yP: 0.72, rP: 0.045, art: 'tree' },
-                { type: 'rect',   xP: 0.68, yP: 0.78, wP: 0.07, hP: 0.05, art: 'blackrock' },
-                { type: 'circle', xP: 0.88, yP: 0.68, rP: 0.04, art: 'rock' },
-                // ===== 中央: 核心交戰區 (樞紐) =====
-                { type: 'circle', xP: 0.48, yP: 0.48, rP: 0.05, art: 'blackrock' },
+                { type: 'rect',   xP: 0.68, yP: 0.82, wP: 0.08, hP: 0.055, art: 'blackrock' },
+                { type: 'circle', xP: 0.90, yP: 0.68, rP: 0.040, art: 'rock' },
+                // 中央區: 核心交戰 (樞紐 + 十字岩漿)
+                { type: 'circle', xP: 0.48, yP: 0.50, rP: 0.055, art: 'blackrock' },
                 { type: 'circle', xP: 0.40, yP: 0.40, rP: 0.035, art: 'rock' },
-                { type: 'circle', xP: 0.58, yP: 0.56, rP: 0.035, art: 'bush' },
-                // 中央十字岩漿池 — 要走過去的風險點
-                { type: 'circle', xP: 0.50, yP: 0.28, rP: 0.05, art: 'lava', passable: true, damage: 10 },
-                { type: 'circle', xP: 0.50, yP: 0.72, rP: 0.05, art: 'lava', passable: true, damage: 10 },
-                // ===== 邊緣點綴 =====
-                { type: 'circle', xP: 0.04, yP: 0.50, rP: 0.03, art: 'tree' },
-                { type: 'circle', xP: 0.95, yP: 0.48, rP: 0.03, art: 'tree' }
+                { type: 'circle', xP: 0.58, yP: 0.58, rP: 0.035, art: 'bush' },
+                { type: 'circle', xP: 0.50, yP: 0.26, rP: 0.055, art: 'lava', passable: true, damage: 10 },
+                { type: 'circle', xP: 0.50, yP: 0.74, rP: 0.055, art: 'lava', passable: true, damage: 10 }
             ]
         }
     };
@@ -138,6 +141,11 @@
     function drawBackground(mapId, ctx, w, h) {
         const m = MAPS[mapId];
         if (!m) return;
+        // brawl 自訂繪製 (四象限融合三種地形)
+        if (mapId === 'brawl') {
+            drawBrawlBackground(ctx, w, h, m.palette);
+            return;
+        }
         const grd = ctx.createLinearGradient(0, 0, 0, h);
         grd.addColorStop(0, m.palette.sky[0]);
         grd.addColorStop(0.5, m.palette.sky[1]);
@@ -149,6 +157,101 @@
         if (mapId === 'grassland') drawGrasslandExtras(ctx, w, h);
         else if (mapId === 'swamp') drawSwampExtras(ctx, w, h);
         else if (mapId === 'volcano') drawVolcanoExtras(ctx, w, h);
+    }
+
+    // 大亂鬥專屬背景: 四象限融合 (左上草原, 右上沼澤, 左下火山, 右下混合)
+    function drawBrawlBackground(ctx, w, h, P) {
+        const halfW = w / 2, halfH = h / 2;
+        // 左上 — 草原 (明亮綠色)
+        drawQuadrantGrad(ctx, 0, 0, halfW, halfH, P.grassSky[0], P.grassGround[1]);
+        // 右上 — 沼澤 (墨綠陰沉)
+        drawQuadrantGrad(ctx, halfW, 0, halfW, halfH, P.swampSky[0], P.swampGround[1]);
+        // 左下 — 火山 (赤紅焦黑)
+        drawQuadrantGrad(ctx, 0, halfH, halfW, halfH, P.volcanoSky[0], P.volcanoGround[1]);
+        // 右下 — 神祕紫 (混合區)
+        drawQuadrantGrad(ctx, halfW, halfH, halfW, halfH, '#4a2a5e', '#1a0a24');
+
+        // 中央圓形聚光 — 提示是競技場中心
+        ctx.save();
+        const cg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.min(w, h) * 0.32);
+        cg.addColorStop(0, 'rgba(255, 220, 180, 0.18)');
+        cg.addColorStop(0.6, 'rgba(255, 180, 130, 0.08)');
+        cg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = cg;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+
+        // 象限分界線 (半透明, 提示玩家)
+        ctx.save();
+        ctx.globalAlpha = 0.15;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(halfW, 0); ctx.lineTo(halfW, h);
+        ctx.moveTo(0, halfH); ctx.lineTo(w, halfH);
+        ctx.stroke();
+        ctx.restore();
+
+        // 左上象限: 草原花點
+        for (let i = 0; i < 18; i++) {
+            const x = (i * 43) % halfW;
+            const y = (i * 71) % halfH;
+            ctx.fillStyle = i % 3 === 0 ? '#ffe066' : (i % 3 === 1 ? '#ff88aa' : '#ffffff');
+            ctx.beginPath();
+            ctx.arc(x + 10, y + 10, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // 右上象限: 沼澤霧
+        ctx.fillStyle = 'rgba(130, 150, 120, 0.18)';
+        for (let i = 0; i < 4; i++) {
+            const y = (i * halfH / 4) + 15;
+            ctx.fillRect(halfW, y, halfW, 22);
+        }
+        // 左下象限: 火山火花
+        for (let i = 0; i < 20; i++) {
+            const x = ((i * 97) % halfW);
+            const y = halfH + ((i * 41) % halfH);
+            ctx.fillStyle = i % 2 === 0 ? '#ff5522' : '#ffcc33';
+            ctx.beginPath();
+            ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // 右下象限: 紫色魔光點
+        for (let i = 0; i < 15; i++) {
+            const x = halfW + ((i * 83) % halfW);
+            const y = halfH + ((i * 57) % halfH);
+            ctx.fillStyle = i % 2 === 0 ? '#bb77ff' : '#ffddff';
+            ctx.beginPath();
+            ctx.arc(x, y, 1.6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 地形邊緣柔化 — 在分界線附近疊一點漸層
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        // 垂直線左右融合帶
+        const bg1 = ctx.createLinearGradient(halfW - 60, 0, halfW + 60, 0);
+        bg1.addColorStop(0, 'rgba(0,0,0,0)');
+        bg1.addColorStop(0.5, 'rgba(60, 40, 80, 0.3)');
+        bg1.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = bg1;
+        ctx.fillRect(halfW - 60, 0, 120, h);
+        // 水平線上下融合帶
+        const bg2 = ctx.createLinearGradient(0, halfH - 60, 0, halfH + 60);
+        bg2.addColorStop(0, 'rgba(0,0,0,0)');
+        bg2.addColorStop(0.5, 'rgba(60, 40, 80, 0.3)');
+        bg2.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = bg2;
+        ctx.fillRect(0, halfH - 60, w, 120);
+        ctx.restore();
+    }
+
+    function drawQuadrantGrad(ctx, x, y, w, h, topColor, bottomColor) {
+        const g = ctx.createLinearGradient(0, y, 0, y + h);
+        g.addColorStop(0, topColor);
+        g.addColorStop(1, bottomColor);
+        ctx.fillStyle = g;
+        ctx.fillRect(x, y, w, h);
     }
 
     function drawGrasslandExtras(ctx, w, h) {

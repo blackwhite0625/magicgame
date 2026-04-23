@@ -16,15 +16,9 @@
     const COMBO_TIMEOUT = 3;        // 連擊重置秒數
     const COMBO_DAMAGE_BONUS = 0.1; // 每層 +10% 傷害
     const MIN_TRAIL_POINTS = 6;     // 最低識別點數 (快速畫的 Z 可能只有 6-7 點)
-    // 大亂鬥世界尺寸 (比畫布大很多, 畫面隨玩家移動)
-    const BRAWL_WORLD_W = 2400;
-    const BRAWL_WORLD_H = 1800;
 
-    // 取得當前有效的 "世界" 尺寸 (brawl 用世界, 其他用畫布)
+    // 世界尺寸 = 畫布尺寸 (大亂鬥改為固定視角, 所有玩家在同一畫面)
     function getWorldDims() {
-        if (game.mp && game.mp.active && game.mp.teamMode === 'brawl') {
-            return { w: BRAWL_WORLD_W, h: BRAWL_WORLD_H };
-        }
         return { w: cachedSize.w, h: cachedSize.h };
     }
 
@@ -86,7 +80,6 @@
         skillPointsEarned: 0,
         infiniteSavedWave: 0,       // 無限模式上次中途離開的波次
         // ==== 多人對戰 ====
-        camera: { x: 0, y: 0 },   // 大亂鬥用: 視窗左上角在世界中的座標
         mp: {
             active: false,
             isHost: false,
@@ -121,7 +114,7 @@
     };
     const LOADOUT_MAX = 5;
     // 初始只有火球術免費, 其餘全部透過商城解鎖
-    const DEFAULT_UNLOCKED = { fireball: true };
+    const DEFAULT_UNLOCKED = { fireball: true, summon: true };
     for (const k in window.Spells.CONFIG) game.runeLevels[k] = 1;
     try {
         const saved = localStorage.getItem('magicRunes.infiniteHigh');
@@ -790,15 +783,8 @@
         const now = performance.now();
         if (now - lastTrailEmit > 22) {
             lastTrailEmit = now;
-            // bug fix: brawl 粒子在 camera 變換內繪製, pointer 是畫布座標
-            // → 必須轉成世界座標, 否則粒子會飄到地圖別處
-            let px = p.x, py = p.y;
-            if (target === 'game' && game.mp && game.mp.active && game.mp.teamMode === 'brawl') {
-                px += game.camera.x;
-                py += game.camera.y;
-            }
-            window.Particles.emitTrail(px, py, '#bb88ff');
-            window.Particles.emitCore(px, py, '#ffffff');
+            window.Particles.emitTrail(p.x, p.y, '#bb88ff');
+            window.Particles.emitCore(p.x, p.y, '#ffffff');
         }
     }
 
@@ -2689,14 +2675,9 @@
         window.UI.showScreen('game-screen');
         resizeCanvas();
         const size = getCanvasSize();
-        // 大亂鬥: 地圖障礙物佈滿大世界 (2400x1800), 不是只在畫布上
-        const mapW = mp.teamMode === 'brawl' ? BRAWL_WORLD_W : size.w;
-        const mapH = mp.teamMode === 'brawl' ? BRAWL_WORLD_H : size.h;
-        const abs = window.Maps.getAbs(mp.mapId, mapW, mapH);
+        // 所有模式: 地圖 = 畫布 (brawl 改固定視角, 不再有 world 概念)
+        const abs = window.Maps.getAbs(mp.mapId, size.w, size.h);
         mp.obstacles = abs ? abs.obstacles : [];
-        // 重置攝影機
-        game.camera.x = 0;
-        game.camera.y = 0;
         game.player.maxHp = 100 + game.statUpgrades.hp * 10;
         game.player.maxMp = 100 + game.statUpgrades.mp * 10;
         game.player.hp = game.player.maxHp;
@@ -2731,13 +2712,10 @@
             1: [[0.82, 0.5]]
         };
         if (isBrawl) {
-            // 大亂鬥生點是在大世界 (2400x1800) 內的比例, 不是畫布
+            // 固定視角: 生點是畫布內的比例
             const myPos = brawlSpawns[mp.mySlot % brawlSpawns.length];
-            game.player.x = BRAWL_WORLD_W * myPos[0];
-            game.player.y = BRAWL_WORLD_H * myPos[1];
-            // 攝影機置中對準玩家
-            game.camera.x = Math.max(0, Math.min(BRAWL_WORLD_W - size.w, game.player.x - size.w / 2));
-            game.camera.y = Math.max(0, Math.min(BRAWL_WORLD_H - size.h, game.player.y - size.h / 2));
+            game.player.x = size.w * myPos[0];
+            game.player.y = size.h * myPos[1];
             // 初始化 brawl 計分 + 復活狀態
             mp.brawlKills = {};
             mp.respawnTimer = 0;
@@ -2745,8 +2723,8 @@
                 const p = mp.players[s];
                 p.hp = 100; p.maxHp = 100; p.alive = true; p.hitFlash = 0;
                 const pos = brawlSpawns[p.slot % brawlSpawns.length];
-                p.x = BRAWL_WORLD_W * pos[0];
-                p.y = BRAWL_WORLD_H * pos[1];
+                p.x = size.w * pos[0];
+                p.y = size.h * pos[1];
             }
         } else {
             // 自己位置 — 看 slot 在隊伍內的順序
@@ -3579,19 +3557,6 @@
         // bug fix: 暫停時必須真正凍結模擬 (之前只停輸入, 敵人/岩漿/狀態封包仍在跑)
         if (mp.paused) return;
 
-        // 大亂鬥: 攝影機追隨玩家 (lerp 平滑)
-        if (mp.teamMode === 'brawl') {
-            const sz = cachedSize;
-            const targetX = game.player.x - sz.w / 2;
-            const targetY = game.player.y - sz.h / 2;
-            const lerp = 0.15;
-            game.camera.x += (targetX - game.camera.x) * lerp;
-            game.camera.y += (targetY - game.camera.y) * lerp;
-            // 限制在世界邊界
-            game.camera.x = Math.max(0, Math.min(BRAWL_WORLD_W - sz.w, game.camera.x));
-            game.camera.y = Math.max(0, Math.min(BRAWL_WORLD_H - sz.h, game.camera.y));
-        }
-
         // 大亂鬥: 復活倒數
         if (mp.teamMode === 'brawl' && mp.respawnTimer > 0) {
             mp.respawnTimer -= dt;
@@ -3945,15 +3910,16 @@
 
     function finishBrawlRespawn() {
         const mp = game.mp;
-        // 隨機生點 (12 點散佈在大世界)
+        const size = getCanvasSize();
+        // 隨機生點 (12 點散佈在畫布)
         const spawns = [
             [0.12, 0.15], [0.88, 0.15], [0.12, 0.85], [0.88, 0.85],
             [0.50, 0.10], [0.50, 0.90], [0.05, 0.50], [0.95, 0.50],
             [0.30, 0.30], [0.70, 0.30], [0.30, 0.70], [0.70, 0.70]
         ];
         const pick = spawns[Math.floor(Math.random() * spawns.length)];
-        game.player.x = BRAWL_WORLD_W * pick[0];
-        game.player.y = BRAWL_WORLD_H * pick[1];
+        game.player.x = size.w * pick[0];
+        game.player.y = size.h * pick[1];
         game.player.hp = game.player.maxHp;
         game.player.mp = game.player.maxMp;
         game.player.shieldActive = false;
@@ -4026,55 +3992,29 @@
         const sx = game.shake.x, sy = game.shake.y;
         if (sx || sy) { ctx.save(); ctx.translate(sx, sy); }
 
-        // 大亂鬥: 所有世界實體改以 camera offset 繪製
-        const isBrawl = game.mp.teamMode === 'brawl';
-        if (isBrawl) {
-            // 套用攝影機變換後, 繪製整個世界 (背景也要用世界尺寸, 玩家才看得出移動)
-            ctx.save();
-            ctx.translate(-game.camera.x, -game.camera.y);
-            window.Maps.drawBackground(game.mp.mapId, ctx, BRAWL_WORLD_W, BRAWL_WORLD_H);
-            window.Maps.drawObstacles(game.mp.obstacles, ctx);
-            window.Spells.renderPoisonFields(ctx);
-            drawPlayer();
+        // 地圖背景 + 障礙物 (畫布就是世界, 固定視角)
+        window.Maps.drawBackground(game.mp.mapId, ctx, w, h);
+        window.Maps.drawObstacles(game.mp.obstacles, ctx);
+
+        window.Spells.renderPoisonFields(ctx);
+        drawPlayer();
+        // 對手: 2v2 / brawl 畫所有玩家; 1v1 畫單一 opponent
+        if (game.mp.teamMode === '2v2' || game.mp.teamMode === 'brawl') {
             for (const s in game.mp.players) {
                 drawOtherPlayer(game.mp.players[s]);
             }
-            window.Spells.renderProjectiles(ctx);
-            window.Spells.renderMeteors(ctx);
-            window.Spells.renderLightning(ctx);
-            window.Spells.renderShockwaves(ctx);
-            window.Spells.renderMeleeArcs(ctx);
-            renderAllies(ctx);
-            window.Particles.render(ctx);
-            renderDamageNumbers(ctx);
-            ctx.restore();
-            // trail 仍用畫布座標 (玩家畫的軌跡)
-            renderTrail(ctx);
-            // 小地圖
-            drawBrawlMinimap(ctx, w, h);
         } else {
-            // 1v1 / 2v2 原本邏輯 (畫布就是世界)
-            window.Maps.drawBackground(game.mp.mapId, ctx, w, h);
-            window.Maps.drawObstacles(game.mp.obstacles, ctx);
-            window.Spells.renderPoisonFields(ctx);
-            drawPlayer();
-            if (game.mp.teamMode === '2v2') {
-                for (const s in game.mp.players) {
-                    drawOtherPlayer(game.mp.players[s]);
-                }
-            } else {
-                drawOpponent();
-            }
-            window.Spells.renderProjectiles(ctx);
-            window.Spells.renderMeteors(ctx);
-            window.Spells.renderLightning(ctx);
-            window.Spells.renderShockwaves(ctx);
-            window.Spells.renderMeleeArcs(ctx);
-            renderAllies(ctx);
-            window.Particles.render(ctx);
-            renderDamageNumbers(ctx);
-            renderTrail(ctx);
+            drawOpponent();
         }
+        window.Spells.renderProjectiles(ctx);
+        window.Spells.renderMeteors(ctx);
+        window.Spells.renderLightning(ctx);
+        window.Spells.renderShockwaves(ctx);
+        window.Spells.renderMeleeArcs(ctx);
+        renderAllies(ctx);
+        window.Particles.render(ctx);
+        renderDamageNumbers(ctx);
+        renderTrail(ctx);
 
         // 對手 HP 條 (頂部)
         renderMpHpBars(ctx, w);
@@ -4309,48 +4249,6 @@
             p.bobPhase = (p.bobPhase || 0) + dt * 2;
             p.hitFlash = Math.max(0, (p.hitFlash || 0) - dt * 2);
         }
-    }
-
-    // 大亂鬥小地圖 — 右下角, 顯示世界 + 自己 + 其他玩家位置
-    function drawBrawlMinimap(ctx, canvasW, canvasH) {
-        const mapSize = 150;
-        const margin = 12;
-        const x = canvasW - mapSize - margin;
-        const y = canvasH - mapSize - margin - 100; // 避開底部工具列
-        // 背景
-        ctx.save();
-        ctx.fillStyle = 'rgba(20, 10, 30, 0.75)';
-        ctx.fillRect(x, y, mapSize, mapSize * (BRAWL_WORLD_H / BRAWL_WORLD_W));
-        ctx.strokeStyle = 'rgba(200, 140, 80, 0.5)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, mapSize, mapSize * (BRAWL_WORLD_H / BRAWL_WORLD_W));
-        const mapH = mapSize * (BRAWL_WORLD_H / BRAWL_WORLD_W);
-        // 視野方框
-        const camW = cachedSize.w / BRAWL_WORLD_W * mapSize;
-        const camH = cachedSize.h / BRAWL_WORLD_H * mapH;
-        const camX = x + game.camera.x / BRAWL_WORLD_W * mapSize;
-        const camY = y + game.camera.y / BRAWL_WORLD_H * mapH;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.strokeRect(camX, camY, camW, camH);
-        // 其他玩家 (紅點)
-        ctx.fillStyle = '#ff6688';
-        for (const s in game.mp.players) {
-            const p = game.mp.players[s];
-            if (!p.alive || p.hp <= 0) continue;
-            const px = x + (p.x / BRAWL_WORLD_W) * mapSize;
-            const py = y + (p.y / BRAWL_WORLD_H) * mapH;
-            ctx.beginPath();
-            ctx.arc(px, py, 3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // 自己 (綠點)
-        const meX = x + (game.player.x / BRAWL_WORLD_W) * mapSize;
-        const meY = y + (game.player.y / BRAWL_WORLD_H) * mapH;
-        ctx.fillStyle = '#66ff88';
-        ctx.beginPath();
-        ctx.arc(meX, meY, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
     }
 
     function renderMpHpBars(ctx, w) {
