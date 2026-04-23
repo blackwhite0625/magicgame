@@ -18,8 +18,8 @@
     const MIN_TRAIL_POINTS = 6;     // 最低識別點數 (快速畫的 Z 可能只有 6-7 點)
 
     // 大亂鬥: 大世界 + 角色固定置中, 畫面跟著玩家移動 (io 風格)
-    const BRAWL_WORLD_W = 2400;
-    const BRAWL_WORLD_H = 1800;
+    const BRAWL_WORLD_W = 3600;
+    const BRAWL_WORLD_H = 2700;
 
     function getWorldDims() {
         if (game.mp && game.mp.active && game.mp.teamMode === 'brawl') {
