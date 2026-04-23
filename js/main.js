@@ -575,20 +575,56 @@
                 game.allies.splice(i, 1);
                 continue;
             }
-            // 遠端魔靈: 純視覺, 只圍繞 owner (施法者) 飄, 不攻擊
-            // 傷害由 owner 客戶端模擬並透過 hit 訊息傳達
+            // 遠端魔靈: 純視覺 (不造成傷害, 傷害由 owner 透過 hit 訊息傳達)
+            // 但仍會視覺上追擊「除了主人以外的最近玩家」, 看起來才有 aggro
             if (a._remote) {
-                // 更新 owner 位置 (追蹤 mp.players[ownerSlot])
-                let ownerPos = { x: a.ownerX, y: a.ownerY };
-                if (a.ownerSlot != null && game.mp.players[a.ownerSlot]) {
-                    ownerPos = game.mp.players[a.ownerSlot];
+                // 找最近可追擊目標 — 除了主人之外的任何玩家
+                let visTarget = null, vnd = Infinity;
+                const ownerSlot = a.ownerSlot;
+                // 自己 (本端玩家) 作為候選 — 除非我是主人 (主人看不到自己的 _remote)
+                if (game.mp.mySlot !== ownerSlot && game.player.hp > 0) {
+                    const dx0 = game.player.x - a.x, dy0 = game.player.y - a.y;
+                    const d0 = dx0 * dx0 + dy0 * dy0;
+                    if (d0 < vnd) { vnd = d0; visTarget = game.player; }
                 }
-                a.wandAngle += dt * 1.2;
-                const tx = ownerPos.x + Math.cos(a.wandAngle) * 80;
-                const ty = ownerPos.y + Math.sin(a.wandAngle) * 80;
-                const ddx = tx - a.x, ddy = ty - a.y;
-                a.x += ddx * dt * 3;
-                a.y += ddy * dt * 3;
+                // 其他玩家
+                for (const s in game.mp.players) {
+                    const sNum = parseInt(s, 10);
+                    if (sNum === ownerSlot) continue;
+                    const p = game.mp.players[s];
+                    if (!p || !p.alive || p.hp <= 0) continue;
+                    const dx0 = p.x - a.x, dy0 = p.y - a.y;
+                    const d0 = dx0 * dx0 + dy0 * dy0;
+                    if (d0 < vnd) { vnd = d0; visTarget = p; }
+                }
+                if (visTarget) {
+                    const dist = Math.sqrt(vnd) || 1;
+                    const dx0 = visTarget.x - a.x;
+                    const dy0 = visTarget.y - a.y;
+                    const speed = 140;
+                    a.x += (dx0 / dist) * speed * dt;
+                    a.y += (dy0 / dist) * speed * dt;
+                    // 接觸時: 播純視覺粒子, 不扣血 (扣血由 owner 的 hit 訊息處理)
+                    if (a.attackCd <= 0 && dist < visTarget.radius + a.radius + 4) {
+                        a.attackCd = 0.7;
+                        window.Particles.burst(visTarget.x, visTarget.y, {
+                            count: 10, spread: 100, life: 0.3,
+                            color: '#ccaaff', color2: '#ffffff', size: 3
+                        });
+                    }
+                } else {
+                    // 沒敵人 → 繞主人飄
+                    let ownerPos = { x: a.ownerX, y: a.ownerY };
+                    if (a.ownerSlot != null && game.mp.players[a.ownerSlot]) {
+                        ownerPos = game.mp.players[a.ownerSlot];
+                    }
+                    a.wandAngle += dt * 1.2;
+                    const tx = ownerPos.x + Math.cos(a.wandAngle) * 80;
+                    const ty = ownerPos.y + Math.sin(a.wandAngle) * 80;
+                    const ddx = tx - a.x, ddy = ty - a.y;
+                    a.x += ddx * dt * 3;
+                    a.y += ddy * dt * 3;
+                }
                 continue;
             }
             // 找最近敵人
