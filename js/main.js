@@ -590,12 +590,13 @@
                     if (game.state === 'pvp') {
                         // PvP: 模擬投射物命中傳送給對方
                         if (nearest._slot !== undefined || game.mp.teamMode !== '2v2') {
+                            const wdA = getWorldDims();
                             window.Multiplayer.send({
                                 type: 'hit',
                                 damage: a.damage,
                                 spell: 'summon',
-                                nx: nearest.x / cachedSize.w,
-                                ny: nearest.y / cachedSize.h,
+                                nx: nearest.x / wdA.w,
+                                ny: nearest.y / wdA.h,
                                 target: nearest._slot
                             });
                             applyLocalDamageToTarget(nearest, a.damage);
@@ -956,13 +957,14 @@
                 const snap = snapshot[i];
                 const dmg = snap.hpBefore - snap.ref.hp;
                 if (dmg > 0) {
+                    const wdB = getWorldDims();
                     window.Multiplayer.send({
                         type: 'hit',
                         damage: dmg,
                         spell: 'aoe',
-                        target: snap.slot,       // 2v2 有 slot, 1v1 為 undefined
-                        nx: snap.ref.x / cachedSize.w,
-                        ny: snap.ref.y / cachedSize.h
+                        target: snap.slot,
+                        nx: snap.ref.x / wdB.w,
+                        ny: snap.ref.y / wdB.h
                     });
                     applyLocalDamageToTarget(snap.ref, dmg);
                 }
@@ -2696,6 +2698,10 @@
         const mapH = isBrawlInit ? BRAWL_WORLD_H : size.h;
         const abs = window.Maps.getAbs(mp.mapId, mapW, mapH);
         mp.obstacles = abs ? abs.obstacles : [];
+        // bug fix: 粒子 viewport 剔除範圍 — brawl 需用世界尺寸否則畫面外的粒子被剔除
+        if (window.Particles && window.Particles.setViewport) {
+            window.Particles.setViewport(mapW, mapH);
+        }
         // 重置攝影機
         game.camera.x = 0;
         game.camera.y = 0;
@@ -3696,10 +3702,11 @@
             const damage = proj.damage;
             const spell = proj.kind || 'aoe';
             const targetSlot = target._slot !== undefined ? target._slot : undefined;
+            const wdC = getWorldDims();
             window.Multiplayer.send({
                 type: 'hit', damage: damage, spell: spell,
-                nx: target.x / cachedSize.w,
-                ny: target.y / cachedSize.h,
+                nx: target.x / wdC.w,
+                ny: target.y / wdC.h,
                 target: targetSlot
             });
             spawnDamageNumber(target.x, target.y, damage, proj.critical);
@@ -3710,10 +3717,11 @@
         window.Spells.updateProjectiles(dt, enemyTargets, handleHit);
         window.Spells.updateMeteors(dt, enemyTargets, (proj, target) => {
             const damage = proj.damage;
+            const wdM = getWorldDims();
             window.Multiplayer.send({
                 type: 'hit', damage: damage, spell: 'meteor',
-                nx: target.x / cachedSize.w,
-                ny: target.y / cachedSize.h,
+                nx: target.x / wdM.w,
+                ny: target.y / wdM.h,
                 target: target._slot
             });
             spawnDamageNumber(target.x, target.y, damage, proj.critical);
@@ -3727,10 +3735,11 @@
         window.Spells.updateLightning(dt);
         window.Spells.updatePoisonFields(dt, enemyTargets, (proj, target) => {
             const damage = proj.damage;
+            const wdP = getWorldDims();
             window.Multiplayer.send({
                 type: 'hit', damage: damage, spell: 'poison',
-                nx: target.x / cachedSize.w,
-                ny: target.y / cachedSize.h,
+                nx: target.x / wdP.w,
+                ny: target.y / wdP.h,
                 target: target._slot
             });
             spawnDamageNumber(target.x, target.y - 10, damage, false);
