@@ -1919,9 +1919,10 @@
 
     function autoJoinBrawl() {
         const BRAWL_CODE = 'BRAWL1';
-        const JOIN_TIMEOUT = 5000;     // join 後 5 秒仍沒收到 assignSlot → 放棄, 自己當 host
-        const HOST_TIMEOUT = 6000;     // host 註冊 6 秒沒 open → 放棄
-        const MAX_TRIES = 5;
+        // WebRTC NAT 穿透在慢網 / TURN 中繼下可能要 10 秒以上, 放寬 timeout 避免誤判
+        const JOIN_TIMEOUT = 15000;    // join 後 15 秒仍沒收到 assignSlot → 放棄, 自己當 host
+        const HOST_TIMEOUT = 10000;    // host 註冊 10 秒沒 open → 放棄
+        const MAX_TRIES = 3;           // 減少嘗試次數 (每次更長更耐心)
 
         const overlay = document.getElementById('brawl-connecting');
         const statusEl = document.getElementById('brawl-connecting-status');

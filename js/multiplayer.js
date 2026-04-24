@@ -12,6 +12,34 @@
     const ID_PREFIX = 'magicrunes-';
     const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉易混字元
 
+    // ICE servers: STUN (NAT 型別探測) + TURN (嚴格 NAT 下中繼)
+    // 沒有 TURN 的話, 僅 symmetric NAT 雙方無法直連 — 會只有 LAN 才連得上
+    // openrelay.metered.ca 是公開免費 TURN 服務 (metered.ca 提供)
+    const ICE_SERVERS = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }
+    ];
+    const PEER_OPTIONS = {
+        config: { iceServers: ICE_SERVERS }
+    };
+
     function makeCode() {
         let s = '';
         for (let i = 0; i < 6; i++) {
@@ -64,7 +92,7 @@
         if (state.capacity <= 0) state.capacity = Infinity;
         state.code = fixedCode || makeCode();
         try {
-            state.peer = new Peer(ID_PREFIX + state.code);
+            state.peer = new Peer(ID_PREFIX + state.code, PEER_OPTIONS);
         } catch (e) {
             if (onError) onError(e.message || '無法建立 Peer');
             return;
@@ -116,7 +144,7 @@
         state.isHost = false;
         state.code = code.toUpperCase();
         try {
-            state.peer = new Peer();
+            state.peer = new Peer(undefined, PEER_OPTIONS);
         } catch (e) {
             if (onError) onError(e.message);
             return;
