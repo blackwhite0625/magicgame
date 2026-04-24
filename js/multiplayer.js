@@ -166,14 +166,30 @@
             emit('open', conn);
         });
         conn.on('data', (data) => {
-            // 房主收到某 guest 訊息, 轉發給其他 guest (2v2 relay)
+            // 房主收到某 guest 訊息, 轉發給其他 guest
             if (state.isHost && state.conns.length > 1 && data && !data._relayed) {
+                // 附在 conn 上的最後位置快照 (state 訊息會更新)
+                if (data.type === 'state' && data.nx != null && data.ny != null) {
+                    conn._lastNx = data.nx;
+                    conn._lastNy = data.ny;
+                }
                 const tagged = Object.assign({ _relayed: true }, data);
+                // brawl 10+ 人: 對於 state 訊息做距離剪枝 — 太遠的玩家看不到, 不用廣播
+                // (視野約 0.25 normalized, 剪枝距離 0.45 留緩衝)
+                const cullDistance = 0.45;
+                const isBrawlRelay = global.Multiplayer && global.Multiplayer._brawlMode;
+                const shouldCull = isBrawlRelay &&
+                                   data.type === 'state' &&
+                                   data.nx != null && data.ny != null;
                 for (let i = 0; i < state.conns.length; i++) {
                     const c = state.conns[i];
-                    if (c !== conn && c.open) {
-                        try { c.send(tagged); } catch (e) {}
+                    if (c === conn || !c.open) continue;
+                    if (shouldCull && c._lastNx != null && c._lastNy != null) {
+                        const ddx = data.nx - c._lastNx;
+                        const ddy = data.ny - c._lastNy;
+                        if (ddx * ddx + ddy * ddy > cullDistance * cullDistance) continue;
                     }
+                    try { c.send(tagged); } catch (e) {}
                 }
             }
             emit('data', data, conn);
@@ -249,6 +265,9 @@
         getConnections: () => state.conns,
         connectionCount: () => state.isHost ? state.conns.length : (state.conn ? 1 : 0),
         // 公開 ID_PREFIX 常數供外部用於建構固定房號
-        ID_PREFIX: ID_PREFIX
+        ID_PREFIX: ID_PREFIX,
+        // 標記大亂鬥模式, 讓 relay 做距離剪枝
+        _brawlMode: false,
+        setBrawlMode: function (on) { this._brawlMode = !!on; }
     };
 })(window);

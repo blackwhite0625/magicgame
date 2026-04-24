@@ -2045,6 +2045,8 @@
     function brawlStartMatch(asHost) {
         if (game.mp.active) return;
         hideBrawlConnecting();  // 取消 autoJoinBrawl timer, 關 overlay
+        // 打開 relay 距離剪枝, 省掉遠端玩家間無謂的 state 廣播
+        if (window.Multiplayer.setBrawlMode) window.Multiplayer.setBrawlMode(true);
         beginMpMatch(asHost);
     }
 
@@ -2052,6 +2054,7 @@
         // 送帶 slot 的 leave 訊息 (brawl 對方需要知道誰走了才能從 mp.players 移除)
         window.Multiplayer.send({ type: 'leave', slot: game.mp.mySlot });
         window.Multiplayer.disconnect();
+        if (window.Multiplayer.setBrawlMode) window.Multiplayer.setBrawlMode(false);
         game.mp.active = false;
         game.mp.paused = false;
         stopPingLoop();
@@ -3950,18 +3953,38 @@
 
         window.Particles.update(dt);
 
-        // 送自身狀態 (~20hz) — 名稱不放這裡 (由 lobby 廣播授權, 避免蓋掉去重後的名稱)
+        // 送自身狀態: brawl 降為 ~12Hz (每 80ms) 以省頻寬, 1v1/2v2 維持 20Hz
+        // 加上 idle dedup: 位置和 HP 沒變就只每 500ms 送一次 keepalive
         mp.sendTimer += dt;
-        if (mp.sendTimer > 0.05) {
+        const isBrawl = mp.teamMode === 'brawl';
+        const sendInterval = isBrawl ? 0.08 : 0.05;
+        if (mp.sendTimer > sendInterval) {
             mp.sendTimer = 0;
             const wd = getWorldDims();
-            window.Multiplayer.send({
-                type: 'state',
-                slot: mp.mySlot,
-                nx: game.player.x / wd.w,
-                ny: game.player.y / wd.h,
-                hp: game.player.hp, maxHp: game.player.maxHp
-            });
+            const nx = game.player.x / wd.w;
+            const ny = game.player.y / wd.h;
+            const hp = game.player.hp;
+            // idle dedup
+            const EPS = 0.002; // ~5px 在 2400px 世界
+            const stateChanged =
+                mp._lastSentNx === undefined ||
+                Math.abs(nx - mp._lastSentNx) > EPS ||
+                Math.abs(ny - mp._lastSentNy) > EPS ||
+                hp !== mp._lastSentHp;
+            const now = performance.now();
+            const mustKeepAlive = !mp._lastSentAt || (now - mp._lastSentAt) > 500;
+            if (stateChanged || mustKeepAlive) {
+                window.Multiplayer.send({
+                    type: 'state',
+                    slot: mp.mySlot,
+                    nx: nx, ny: ny,
+                    hp: hp, maxHp: game.player.maxHp
+                });
+                mp._lastSentNx = nx;
+                mp._lastSentNy = ny;
+                mp._lastSentHp = hp;
+                mp._lastSentAt = now;
+            }
         }
 
         // 本地死亡 → 輸這回合
@@ -4239,8 +4262,14 @@
             window.Maps.drawObstacles(game.mp.obstacles, ctx);
             window.Spells.renderPoisonFields(ctx);
             drawPlayer();
+            // 跨畫面玩家跳過 render — 省大量繪製成本 (10+ 人場景尤其有用)
+            const camX = game.camera.x, camY = game.camera.y;
+            const vpLeft = camX - 60, vpRight = camX + w + 60;
+            const vpTop = camY - 60, vpBottom = camY + h + 60;
             for (const s in game.mp.players) {
-                drawOtherPlayer(game.mp.players[s]);
+                const pp = game.mp.players[s];
+                if (!pp || pp.x < vpLeft || pp.x > vpRight || pp.y < vpTop || pp.y > vpBottom) continue;
+                drawOtherPlayer(pp);
             }
             window.Spells.renderProjectiles(ctx);
             window.Spells.renderMeteors(ctx);
