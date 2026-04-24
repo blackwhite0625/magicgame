@@ -173,12 +173,21 @@
             ws.onmessage = (ev) => {
                 let msg;
                 try { msg = JSON.parse(ev.data); } catch (e) { return; }
-                handleSignalMessage(msg).catch(err => console.error('[mp] handleSignalMessage', err));
-                // 第一次收到 joined → 信令就位, resolve
-                if (!resolvedSignaling && msg.type === 'joined') {
-                    resolvedSignaling = true;
-                    resolve(msg);
+                // 第一次收到 joined 就位 → resolve signaling
+                // 若第一個訊息是 error (e.g. "host exists") → 立即 reject
+                if (!resolvedSignaling) {
+                    if (msg.type === 'joined') {
+                        resolvedSignaling = true;
+                        resolve(msg);
+                    } else if (msg.type === 'error') {
+                        resolvedSignaling = true;
+                        clearTimeout(openTimeout);
+                        try { ws.close(); } catch (e) {}
+                        reject(new Error(msg.msg || 'signaling error'));
+                        return;
+                    }
                 }
+                handleSignalMessage(msg).catch(err => console.error('[mp] handleSignalMessage', err));
             };
 
             ws.onerror = (ev) => {
@@ -490,9 +499,13 @@
         if (code.startsWith('BRAWL')) {
             const m = await brawlMatch();
             if (m && m.room) {
-                // 若分到的房是空的, 我們只能當 host, 但用戶是呼叫 join
-                // → 讓 autoJoinBrawl 的 host fallback 處理, 這裡還是嘗試 join
                 code = m.room;
+                // 空房: join 會卡死 (沒 host 不會送 offer) → 立即回 error
+                // 讓 caller (autoJoinBrawl) 快速 fallback 到 attemptHost
+                if (m.count === 0 || m.fresh) {
+                    if (onError) onError('empty brawl room');
+                    return;
+                }
             }
         }
         state.code = code;

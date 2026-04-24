@@ -86,13 +86,13 @@ export class Room {
 
         let slot;
         if (role === 'host') {
-            // host 永遠拿 slot 0 — 若已被占 (重連), 踢掉舊的
-            for (const w of activeWs) {
-                if (w === server) continue;
-                const att = this._readAttachment(w);
-                if (att && att.slot === 0) {
-                    try { w.close(1000, 'host replaced'); } catch (e) {}
-                }
+            // 拒絕重複 host: 若 slot 0 已被別人占走, 回錯誤讓 client 降級為 guest
+            // (兩人同時搶同一個 brawl 房時很重要 — 不能互踢)
+            const hasHost = usedSlots.has(0);
+            if (hasHost) {
+                this._sendTo(server, { type: 'error', msg: 'host already exists' });
+                server.close(1000, 'host exists');
+                return new Response(null, { status: 101, webSocket: client });
             }
             slot = 0;
             // host 設定房間容量
