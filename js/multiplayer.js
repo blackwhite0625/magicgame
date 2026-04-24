@@ -29,7 +29,7 @@
     // ==== 設定: Worker 網址 ====
     // 部署 Cloudflare Worker 之後 把這行改成你的 Worker 網址
     // (worker/README.md 有詳細部署步驟)
-    const SIGNAL_ORIGIN_PROD = 'https://magicrunes-signal.YOUR_ACCOUNT.workers.dev';
+    const SIGNAL_ORIGIN_PROD = 'https://magicrunes-signal.f0989724842.workers.dev';
 
     function getSignalOrigin() {
         const h = location.hostname;
