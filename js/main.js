@@ -121,7 +121,7 @@
     };
     const LOADOUT_MAX = 5;
     // 初始只有火球術免費, 其餘全部透過商城解鎖
-    const DEFAULT_UNLOCKED = { fireball: true, summon: true };
+    const DEFAULT_UNLOCKED = { fireball: true };
     for (const k in window.Spells.CONFIG) game.runeLevels[k] = 1;
     try {
         const saved = localStorage.getItem('magicRunes.infiniteHigh');
