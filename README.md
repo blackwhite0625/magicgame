@@ -112,43 +112,37 @@ magic-runes/
 - 此版本無存檔，重新整理後會從第 1 關解鎖狀態重新開始
 - 螢幕寬度低於 900px 可能 UI 擁擠（專為 MacBook 設計）
 
-## 上架 / 部署到網站
+## 上架 / 部署
 
-遊戲是純前端（HTML + CSS + JavaScript），不需要後端，可以部署到任何靜態站主機。推薦三種免費方案：
+前端為純靜態檔,可放任何靜態主機。**多人連線**改用 **Cloudflare Worker + Durable Object + Realtime TURN**,部署步驟見 [worker/README.md](worker/README.md)。
 
-### 🥇 方案 A：GitHub Pages（最簡單）
+### 推薦部署: 全 Cloudflare (完全免費, 無需刷卡)
 
-```bash
-# 1. 把整個 game claude 資料夾推上一個 GitHub repo
-cd "/Users/user/Desktop/game claude"
-git init
-git add .
-git commit -m "initial"
-git branch -M main
-git remote add origin https://github.com/你的帳號/magic-runes.git
-git push -u origin main
+1. **部署 Worker** (信令伺服器 + 公開 TURN 代理):
+   ```bash
+   cd worker
+   npm install
+   npx wrangler login
+   npx wrangler deploy
+   ```
+   Worker 內建公開 TURN 清單 (openrelay + 多組 STUN),**不需要額外設定付費 TURN**。
+   完整步驟: [worker/README.md](worker/README.md)
 
-# 2. 在 GitHub repo 設定頁 → Pages → Source 選 "main" branch root
-# 3. 等 1~2 分鐘, 網址會是 https://你的帳號.github.io/magic-runes/
-```
+2. **把 Worker 網址填進前端**:開啟 [js/multiplayer.js](js/multiplayer.js),改檔頭的 `SIGNAL_ORIGIN_PROD`。
 
-### 🥈 方案 B：Netlify 拖曳部署（不用 Git）
+3. **部署前端**: Cloudflare Pages → Connect GitHub repo → build command 留空、output directory 填 `/` → Deploy。
 
-1. 到 [netlify.com](https://app.netlify.com/drop)
-2. 把整個 `game claude` 資料夾 **直接拖進去**
-3. 立即得到隨機網址如 `amazing-rune-xxx.netlify.app`
-4. 可在 Netlify 設定自訂網域
+### 其他靜態主機
 
-### 🥉 方案 C：Cloudflare Pages / Vercel
-
-兩者都支援 Git 連動自動部署，流程類似 GitHub Pages，速度更快（全球 CDN）。
+前端也可放 GitHub Pages / Netlify / Vercel,Worker 獨立部署到 Cloudflare 即可。
+唯一限制: 多人連線需要 HTTPS (上述服務皆預設 HTTPS ✅)。
 
 ---
 
 ### 注意事項
 
-- **多人連線** 會需要 HTTPS，上述三家都預設 HTTPS ✅
-- **音效** 需要使用者先點擊一下畫面才會啟動（瀏覽器 autoplay policy）
-- **localStorage** 每個網域獨立，換網域需重新儲存進度
+- **多人連線** 需要 HTTPS(Worker 跟 Pages 皆自動)
+- **音效** 需要使用者先點擊一下畫面才會啟動(瀏覽器 autoplay policy)
+- **localStorage** 每個網域獨立,換網域需重新儲存進度
 
 祝你施法愉快 ✨

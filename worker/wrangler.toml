@@ -1,0 +1,16 @@
+name = "magicrunes-signal"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+
+# Durable Object: 每個房間一個 instance
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+# 預設日誌 (方便部署初期偵錯 — 穩定後可關掉)
+[observability]
+enabled = true

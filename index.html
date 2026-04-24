@@ -10,7 +10,7 @@
     <!-- 限制資源來源, 禁止外部 inline script, 防止 XSS / clickjacking -->
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src 'self' https://unpkg.com;
+        script-src 'self';
         style-src 'self' 'unsafe-inline';
         img-src 'self' data: blob:;
         font-src 'self' data:;
@@ -411,15 +411,14 @@
         </div>
     </div>
 
-    <!-- PeerJS (WebRTC P2P 信令) 用於多人連線; 僅在使用多人時才會真正建立連線 -->
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="js/particles.js?v=47"></script>
-    <script src="js/recognizer.js?v=47"></script>
-    <script src="js/spells.js?v=47"></script>
-    <script src="js/enemies.js?v=47"></script>
-    <script src="js/maps.js?v=47"></script>
-    <script src="js/multiplayer.js?v=47"></script>
-    <script src="js/ui.js?v=47"></script>
-    <script src="js/main.js?v=47"></script>
+    <!-- 多人連線改用 Cloudflare Worker 信令 + 原生 WebRTC (見 js/multiplayer.js) -->
+    <script src="js/particles.js?v=48"></script>
+    <script src="js/recognizer.js?v=48"></script>
+    <script src="js/spells.js?v=48"></script>
+    <script src="js/enemies.js?v=48"></script>
+    <script src="js/maps.js?v=48"></script>
+    <script src="js/multiplayer.js?v=48"></script>
+    <script src="js/ui.js?v=48"></script>
+    <script src="js/main.js?v=48"></script>
 </body>
 </html>

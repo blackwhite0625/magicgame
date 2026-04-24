@@ -1,0 +1,6 @@
+# 本機開發用 — 複製成 .dev.vars (不會被 git 追蹤) 並填入實際值
+# 實際部署時改用 `wrangler secret put TURN_APP_ID` / `TURN_APP_TOKEN`
+
+# 從 Cloudflare Dashboard → Realtime → Turn Key Apps 建立後取得
+TURN_APP_ID=your_turn_app_id_here
+TURN_APP_TOKEN=your_turn_app_token_here

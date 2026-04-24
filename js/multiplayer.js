@@ -1,31 +1,50 @@
 /* ================================================================
-   multiplayer.js — 1v1 連線 (WebRTC via PeerJS)
-   - 房主建立房間: 生成 6 碼 room code, 使用自訂 peer ID 註冊
-   - 訪客輸入 code 直接連線
-   - 建立後透過 DataChannel 雙向傳送訊息
-   - 不需要後端, PeerJS 公用信令伺服器處理握手
+   multiplayer.js — Cloudflare 版多人連線
+
+   架構:
+     Browser ─WebSocket─► Cloudflare Worker ─► Durable Object (一房一個)
+             ─GET /turn─► Cloudflare Realtime TURN API
+             ─WebRTC P2P (DataChannel) ─► 其他 Browser
+
+   取代了舊版的 PeerJS — 對外 API (window.Multiplayer) 完全相同,
+   main.js 不需要任何修改.
+
+   事件 (emit):
+     hosting(code)         房主已開房, code 準備好分享
+     open(conn)            DataChannel 打開 — 對方可接收訊息
+     data(obj, conn)       收到對方訊息
+     close(conn)           對方離線
+     error(msg)            連線錯誤
+     disconnected          disconnect() 被呼叫
+
+   conn 物件介面 (main.js 依賴這幾個屬性):
+     conn.peer   — 唯一識別字串
+     conn.send(obj) — 只發給此對方
+     conn.open   — bool
    ================================================================ */
 
 (function (global) {
     'use strict';
 
-    const ID_PREFIX = 'magicrunes-';
-    const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉易混字元
+    // ==== 設定: Worker 網址 ====
+    // 部署 Cloudflare Worker 之後 把這行改成你的 Worker 網址
+    // (worker/README.md 有詳細部署步驟)
+    const SIGNAL_ORIGIN_PROD = 'https://magicrunes-signal.YOUR_ACCOUNT.workers.dev';
 
-    // ICE servers: STUN + 最小可用 TURN (太多 TURN 會延遲 ICE gathering)
-    const ICE_SERVERS = [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' },
-        // Metered 公開 TURN (穩定可用)
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-    ];
-    const PEER_OPTIONS = {
-        config: { iceServers: ICE_SERVERS }
-    };
+    function getSignalOrigin() {
+        const h = location.hostname;
+        if (h === 'localhost' || h === '127.0.0.1' || h === '') {
+            return 'http://localhost:8787';
+        }
+        return SIGNAL_ORIGIN_PROD;
+    }
 
+    function getWsOrigin() {
+        return getSignalOrigin().replace(/^http/, 'ws');
+    }
+
+    // ==== 房號產生 (1v1/2v2 的隨機 6 碼, 避開易混字) ====
+    const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     function makeCode() {
         let s = '';
         for (let i = 0; i < 6; i++) {
@@ -34,179 +53,467 @@
         return s;
     }
 
+    // ==== 狀態 ====
     const state = {
-        peer: null,
-        conn: null,      // 訪客 → 房主 (或 1v1 房主唯一連線, 相容舊代碼)
-        conns: [],       // 房主維護的所有訪客連線 (含 2v2 時最多 3 條)
-        capacity: 2,     // 房間容量 (1v1=2, 2v2=4)
+        ws: null,
+        wsReady: false,
+        iceServers: null,
         isHost: false,
         code: null,
-        connected: false
+        capacity: 2,        // 1v1=2, 2v2=4, 0/Infinity=大亂鬥
+        mySlot: null,
+        peers: new Map(),   // slot → PeerHandle
+        myName: 'Player',
+        _peerNonce: 0,
+        _brawlMode: false,
+        _pendingOnCodeReady: null,
+        _pendingOnError: null
     };
 
+    // ==== 事件系統 ====
     const listeners = {};
-
     function on(evt, fn) {
-        listeners[evt] = listeners[evt] || [];
-        listeners[evt].push(fn);
+        (listeners[evt] = listeners[evt] || []).push(fn);
     }
     function off(evt, fn) {
         if (!listeners[evt]) return;
         listeners[evt] = listeners[evt].filter(h => h !== fn);
     }
-    // 清除所有 listeners (特定事件或全部) — 避免重複呼叫 setupHandlers 造成事件重複觸發
     function offAll(evt) {
         if (evt) delete listeners[evt];
         else for (const k in listeners) delete listeners[k];
     }
-    function emit(evt) {
+    function emit(evt /*, ...args */) {
         const args = Array.prototype.slice.call(arguments, 1);
         (listeners[evt] || []).forEach(h => {
-            try { h.apply(null, args); } catch (e) { console.error(e); }
+            try { h.apply(null, args); } catch (e) { console.error('[mp] listener error', evt, e); }
         });
     }
 
-    /** 建立房間
-     * @param {number} capacity  房間容量 (1v1=2, 2v2=4, 0 或 -1 表示無限)
-     * @param {string} [fixedCode] 指定房號 (大亂鬥 auto-join 用固定 ID)
+    // ==== TURN credential 取得 ====
+    let _iceCache = null;
+    let _iceCacheAt = 0;
+    async function fetchIceServers() {
+        // 快取 20 分鐘 (TURN 憑證 24 小時有效)
+        if (_iceCache && Date.now() - _iceCacheAt < 20 * 60 * 1000) {
+            return _iceCache;
+        }
+        const fallback = [
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:stun.l.google.com:19302' }
+        ];
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 5000);
+            const res = await fetch(getSignalOrigin() + '/turn', { signal: ctrl.signal });
+            clearTimeout(timer);
+            const data = await res.json();
+            if (data && Array.isArray(data.iceServers) && data.iceServers.length) {
+                _iceCache = data.iceServers;
+                _iceCacheAt = Date.now();
+                return _iceCache;
+            }
+        } catch (e) {
+            console.warn('[mp] fetchIceServers failed, using fallback STUN', e);
+        }
+        return fallback;
+    }
+
+    // ==== 大亂鬥分房: 問 Worker 哪間有空位 ====
+    async function brawlMatch() {
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 5000);
+            const res = await fetch(getSignalOrigin() + '/brawl-match', { signal: ctrl.signal });
+            clearTimeout(timer);
+            return await res.json();   // { room, count, capacity, fresh? }
+        } catch (e) {
+            console.warn('[mp] brawlMatch failed', e);
+            return null;
+        }
+    }
+
+    // ==== WebSocket 信令 ====
+    function openSignalingWS(code, role, capacity, name) {
+        return new Promise((resolve, reject) => {
+            const params = new URLSearchParams({
+                room: code,
+                role,
+                capacity: String(capacity || 0),
+                name: name || 'Player'
+            });
+            const url = getWsOrigin() + '/ws?' + params.toString();
+
+            let ws;
+            try {
+                ws = new WebSocket(url);
+            } catch (e) {
+                reject(e);
+                return;
+            }
+            state.ws = ws;
+
+            let openedOnce = false;
+            let resolvedSignaling = false;
+
+            // 10 秒內要打開否則視為失敗
+            const openTimeout = setTimeout(() => {
+                if (!openedOnce) {
+                    try { ws.close(); } catch (e) {}
+                    reject(new Error('signaling ws open timeout'));
+                }
+            }, 10000);
+
+            ws.onopen = () => {
+                openedOnce = true;
+                clearTimeout(openTimeout);
+                state.wsReady = true;
+            };
+
+            ws.onmessage = (ev) => {
+                let msg;
+                try { msg = JSON.parse(ev.data); } catch (e) { return; }
+                handleSignalMessage(msg).catch(err => console.error('[mp] handleSignalMessage', err));
+                // 第一次收到 joined → 信令就位, resolve
+                if (!resolvedSignaling && msg.type === 'joined') {
+                    resolvedSignaling = true;
+                    resolve(msg);
+                }
+            };
+
+            ws.onerror = (ev) => {
+                console.warn('[mp] ws error', ev);
+            };
+
+            ws.onclose = (ev) => {
+                state.wsReady = false;
+                if (!resolvedSignaling) {
+                    clearTimeout(openTimeout);
+                    reject(new Error('ws closed before joined: ' + (ev.code || '?')));
+                }
+                // WS 關了之後, 已建立的 P2P DataChannel 仍可使用
+                // 但失去信令能力, 新加入者無法連進來
+            };
+        });
+    }
+
+    function wsSend(obj) {
+        if (!state.ws || state.ws.readyState !== 1) return;
+        try { state.ws.send(JSON.stringify(obj)); } catch (e) {}
+    }
+
+    // ==== 核心: 信令訊息處理 ====
+    async function handleSignalMessage(msg) {
+        switch (msg.type) {
+            case 'joined': {
+                state.mySlot = msg.slot;
+                if (typeof msg.capacity === 'number') state.capacity = msg.capacity;
+                // 如果我是訪客, peers 清單告訴我誰已經在房內
+                // 主機會主動 createOffer 給我, 我只需等 signal 訊息
+                break;
+            }
+            case 'peer-join': {
+                // 只有主機主動發 offer 給新來的訪客
+                // (訪客收到 peer-join 代表另一個訪客也加入了, 但訪客之間不直連, 所以忽略)
+                if (state.isHost) {
+                    await hostInitiatePeerConn(msg.slot, msg.name, msg.role);
+                }
+                break;
+            }
+            case 'peer-leave': {
+                cleanupPeer(msg.slot);
+                break;
+            }
+            case 'signal': {
+                await handleWebRTCSignal(msg.from, msg.data);
+                break;
+            }
+            case 'room-full': {
+                emit('error', 'room full');
+                break;
+            }
+            case 'error': {
+                emit('error', msg.msg || 'signaling error');
+                break;
+            }
+            case 'pong':
+                // 可選 RTT 量測 — 目前不用
+                break;
+        }
+    }
+
+    // ==== PeerHandle — 封裝一條 WebRTC 連線 ====
+    function makePeerHandle(slot, iceServers) {
+        const pc = new RTCPeerConnection({ iceServers: iceServers });
+        const peerId = 'peer-' + slot + '-' + (++state._peerNonce);
+
+        const handle = {
+            slot,
+            peer: peerId,
+            pc,
+            dc: null,
+            open: false,
+            _lastNx: null,
+            _lastNy: null,
+            send(obj) {
+                if (!handle.dc || !handle.open) return;
+                const payload = typeof obj === 'string' ? obj : JSON.stringify(obj);
+                try { handle.dc.send(payload); } catch (e) {}
+            },
+            close() {
+                try { if (handle.dc) handle.dc.close(); } catch (e) {}
+                try { pc.close(); } catch (e) {}
+            }
+        };
+
+        // Trickle ICE: 收集到 candidate 就透過 WS 轉發
+        pc.onicecandidate = (e) => {
+            if (e.candidate) {
+                wsSend({ type: 'signal', to: slot, data: { ice: e.candidate } });
+            }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            // 連線斷了 → 釋放資源
+            const s = pc.iceConnectionState;
+            if (s === 'failed' || s === 'closed') {
+                if (handle.open) {
+                    handle.open = false;
+                    emit('close', handle);
+                }
+                cleanupPeer(slot);
+            }
+        };
+
+        return handle;
+    }
+
+    // 設定 DataChannel 的事件 handler (host/guest 都會用)
+    function attachDC(handle, dc) {
+        handle.dc = dc;
+        dc.binaryType = 'arraybuffer';
+        dc.onopen = () => {
+            handle.open = true;
+            emit('open', handle);
+        };
+        dc.onmessage = (ev) => {
+            let data;
+            try {
+                data = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
+            } catch (e) { return; }
+            onDCMessage(handle, data);
+        };
+        dc.onclose = () => {
+            if (handle.open) {
+                handle.open = false;
+                emit('close', handle);
+            }
+            cleanupPeer(handle.slot);
+        };
+        dc.onerror = (e) => {
+            console.warn('[mp] dc error slot', handle.slot, e);
+        };
+    }
+
+    // 房主主動向新訪客發 offer
+    async function hostInitiatePeerConn(slot, name, role) {
+        const handle = makePeerHandle(slot, state.iceServers);
+        state.peers.set(slot, handle);
+
+        const dc = handle.pc.createDataChannel('game', { ordered: true });
+        attachDC(handle, dc);
+
+        try {
+            const offer = await handle.pc.createOffer();
+            await handle.pc.setLocalDescription(offer);
+            wsSend({ type: 'signal', to: slot, data: { sdp: handle.pc.localDescription } });
+        } catch (e) {
+            console.error('[mp] createOffer fail', e);
+            cleanupPeer(slot);
+        }
+    }
+
+    // 收到對方的 WebRTC 訊號 (offer / answer / ice)
+    async function handleWebRTCSignal(fromSlot, data) {
+        if (!data) return;
+
+        if (data.sdp) {
+            const sdp = data.sdp;
+            if (sdp.type === 'offer') {
+                // 訪客收到主機的 offer
+                let handle = state.peers.get(fromSlot);
+                if (!handle) {
+                    handle = makePeerHandle(fromSlot, state.iceServers);
+                    state.peers.set(fromSlot, handle);
+                    // 訪客: 等 host 建的 DataChannel 過來
+                    handle.pc.ondatachannel = (e) => attachDC(handle, e.channel);
+                }
+                try {
+                    await handle.pc.setRemoteDescription(sdp);
+                    const answer = await handle.pc.createAnswer();
+                    await handle.pc.setLocalDescription(answer);
+                    wsSend({ type: 'signal', to: fromSlot, data: { sdp: handle.pc.localDescription } });
+                } catch (e) {
+                    console.error('[mp] handleOffer fail', e);
+                }
+            } else if (sdp.type === 'answer') {
+                // 主機收到訪客的 answer
+                const handle = state.peers.get(fromSlot);
+                if (!handle) return;
+                try {
+                    await handle.pc.setRemoteDescription(sdp);
+                } catch (e) {
+                    console.error('[mp] setRemoteDescription answer fail', e);
+                }
+            }
+        } else if (data.ice) {
+            const handle = state.peers.get(fromSlot);
+            if (!handle) return;
+            try {
+                await handle.pc.addIceCandidate(data.ice);
+            } catch (e) {
+                // ICE 可能晚到, 忽略
+            }
+        }
+    }
+
+    // ==== 主機轉發: 訪客訊息 → 其他訪客 (同舊版 logic) ====
+    function onDCMessage(fromHandle, data) {
+        // 只有主機做轉發, 訪客直接 emit data
+        if (state.isHost && state.peers.size > 1 && data && !data._relayed) {
+            // 位置追蹤 (大亂鬥距離剪枝用)
+            if (data.type === 'state' && data.nx != null && data.ny != null) {
+                fromHandle._lastNx = data.nx;
+                fromHandle._lastNy = data.ny;
+            }
+            const tagged = Object.assign({ _relayed: true }, data);
+            const isBrawl = state._brawlMode;
+            const shouldCull = isBrawl &&
+                               data.type === 'state' &&
+                               data.nx != null && data.ny != null;
+            const CULL_DIST = 0.45;
+            const CULL_DIST_SQ = CULL_DIST * CULL_DIST;
+
+            for (const ph of state.peers.values()) {
+                if (ph === fromHandle || !ph.open) continue;
+                if (shouldCull && ph._lastNx != null && ph._lastNy != null) {
+                    const ddx = data.nx - ph._lastNx;
+                    const ddy = data.ny - ph._lastNy;
+                    if (ddx * ddx + ddy * ddy > CULL_DIST_SQ) continue;
+                }
+                const payload = JSON.stringify(tagged);
+                try { ph.dc.send(payload); } catch (e) {}
+            }
+        }
+        emit('data', data, fromHandle);
+    }
+
+    // ==== 清理單一 peer ====
+    function cleanupPeer(slot) {
+        const h = state.peers.get(slot);
+        if (!h) return;
+        state.peers.delete(slot);
+        const wasOpen = h.open;
+        try { h.close(); } catch (e) {}
+        if (wasOpen) emit('close', h);
+    }
+
+    // ================================================================
+    // 對外 API
+    // ================================================================
+
+    /**
+     * 建立房間
+     * @param {(code:string)=>void} onCodeReady
+     * @param {(err:string)=>void} onError
+     * @param {number} capacity  0 = 無限 (brawl), 2 = 1v1, 4 = 2v2
+     * @param {string} [fixedCode]  指定房號 (大亂鬥 BRAWL* 會觸發自動分房)
      */
-    function host(onCodeReady, onError, capacity, fixedCode) {
+    async function host(onCodeReady, onError, capacity, fixedCode) {
         cleanup();
         state.isHost = true;
-        state.capacity = capacity || 2;
-        // 0 或負值 → 無限 (Infinity)
-        if (state.capacity <= 0) state.capacity = Infinity;
-        state.code = fixedCode || makeCode();
+        state.capacity = (capacity === 0 || capacity === undefined) ? 0 : capacity;
+
         try {
-            state.peer = new Peer(ID_PREFIX + state.code, PEER_OPTIONS);
+            state.iceServers = await fetchIceServers();
         } catch (e) {
-            if (onError) onError(e.message || '無法建立 Peer');
+            if (onError) onError('TURN 憑證取得失敗');
             return;
         }
-        state.peer.on('open', (id) => {
-            if (onCodeReady) onCodeReady(state.code);
-            emit('hosting', state.code);
-        });
-        state.peer.on('connection', (conn) => {
-            // 去重: 若同一個 peer 已有舊連線 (刷新 / 重連), 關閉舊的, 保留新的
-            const incomingPeer = conn && conn.peer;
-            if (incomingPeer) {
-                for (let i = state.conns.length - 1; i >= 0; i--) {
-                    const existing = state.conns[i];
-                    if (existing && existing.peer === incomingPeer) {
-                        try { existing.close(); } catch (e) {}
-                        state.conns.splice(i, 1);
-                    }
-                }
-            }
-            // 房間已滿: 拒絕 (capacity = Infinity 時永不拒絕)
-            if (state.conns.length >= state.capacity - 1) {
-                try { conn.close(); } catch (e) {}
+
+        // Brawl 特殊處理: 透過 matchmaker 找空房
+        let code;
+        if (fixedCode && String(fixedCode).toUpperCase().startsWith('BRAWL')) {
+            const m = await brawlMatch();
+            if (m && (m.count === 0 || m.fresh)) {
+                code = m.room;
+            } else if (m && m.room) {
+                // 配到一個有人在的房 — 開房者不該搶 host, 回傳錯誤讓 caller 改走 join
+                if (onError) onError('room has host');
                 return;
+            } else {
+                code = fixedCode;
             }
-            state.conns.push(conn);
-            state.conn = conn; // 相容 1v1 舊路徑 (最後一個)
-            setupConn(conn, conn);
-        });
-        state.peer.on('error', (err) => {
-            // 固定 ID 被搶 → 讓呼叫端決定後續 (fallback 到 join)
-            if (err && err.type === 'unavailable-id') {
-                if (fixedCode) {
-                    // 大亂鬥模式: 不要 retry, 交給上層切換為 join
-                    if (onError) onError('unavailable-id');
-                    return;
-                }
-                host(onCodeReady, onError, state.capacity);
-                return;
-            }
-            emit('error', err.message || err.type || 'PeerJS 錯誤');
-            if (onError) onError(err.message || err.type);
-        });
+        } else {
+            code = fixedCode || makeCode();
+        }
+        state.code = code;
+
+        try {
+            await openSignalingWS(code, 'host', state.capacity, state.myName);
+            if (onCodeReady) onCodeReady(code);
+            emit('hosting', code);
+        } catch (err) {
+            if (onError) onError(err.message || String(err));
+            cleanup();
+        }
     }
 
-    /** 加入房間 */
-    function join(code, onError) {
+    /**
+     * 加入房間
+     * @param {string} code  房號 (BRAWL* 會觸發自動分房)
+     * @param {(err:string)=>void} onError
+     */
+    async function join(code, onError) {
         cleanup();
         state.isHost = false;
-        state.code = code.toUpperCase();
+        code = String(code || '').toUpperCase();
+
         try {
-            state.peer = new Peer(undefined, PEER_OPTIONS);
+            state.iceServers = await fetchIceServers();
         } catch (e) {
-            if (onError) onError(e.message);
+            if (onError) onError('TURN 憑證取得失敗');
             return;
         }
-        state.peer.on('open', (id) => {
-            const conn = state.peer.connect(ID_PREFIX + state.code, { reliable: true });
-            state.conn = conn;
-            setupConn(conn);
-        });
-        state.peer.on('error', (err) => {
-            emit('error', err.message || err.type || 'PeerJS 錯誤');
-            if (onError) onError(err.type === 'peer-unavailable' ? '房間不存在或已關閉' : (err.message || err.type));
-        });
+
+        // Brawl 自動分房
+        if (code.startsWith('BRAWL')) {
+            const m = await brawlMatch();
+            if (m && m.room) {
+                // 若分到的房是空的, 我們只能當 host, 但用戶是呼叫 join
+                // → 讓 autoJoinBrawl 的 host fallback 處理, 這裡還是嘗試 join
+                code = m.room;
+            }
+        }
+        state.code = code;
+
+        try {
+            await openSignalingWS(code, 'guest', 0, state.myName);
+            // DataChannel 尚未就位 — host 會主動發 offer, open 事件稍後觸發
+        } catch (err) {
+            if (onError) onError(err.message || String(err));
+            cleanup();
+        }
     }
 
-    function setupConn(conn, fromConn) {
-        conn.on('open', () => {
-            state.connected = true;
-            emit('open', conn);
-        });
-        conn.on('data', (data) => {
-            // 房主收到某 guest 訊息, 轉發給其他 guest
-            if (state.isHost && state.conns.length > 1 && data && !data._relayed) {
-                // 附在 conn 上的最後位置快照 (state 訊息會更新)
-                if (data.type === 'state' && data.nx != null && data.ny != null) {
-                    conn._lastNx = data.nx;
-                    conn._lastNy = data.ny;
-                }
-                const tagged = Object.assign({ _relayed: true }, data);
-                // brawl 10+ 人: 對於 state 訊息做距離剪枝 — 太遠的玩家看不到, 不用廣播
-                // (視野約 0.25 normalized, 剪枝距離 0.45 留緩衝)
-                const cullDistance = 0.45;
-                const isBrawlRelay = global.Multiplayer && global.Multiplayer._brawlMode;
-                const shouldCull = isBrawlRelay &&
-                                   data.type === 'state' &&
-                                   data.nx != null && data.ny != null;
-                for (let i = 0; i < state.conns.length; i++) {
-                    const c = state.conns[i];
-                    if (c === conn || !c.open) continue;
-                    if (shouldCull && c._lastNx != null && c._lastNy != null) {
-                        const ddx = data.nx - c._lastNx;
-                        const ddy = data.ny - c._lastNy;
-                        if (ddx * ddx + ddy * ddy > cullDistance * cullDistance) continue;
-                    }
-                    try { c.send(tagged); } catch (e) {}
-                }
-            }
-            emit('data', data, conn);
-        });
-        conn.on('close', () => {
-            // 移除斷開的連線
-            if (state.isHost) {
-                const idx = state.conns.indexOf(conn);
-                if (idx >= 0) state.conns.splice(idx, 1);
-                if (state.conns.length === 0) state.connected = false;
-            } else {
-                state.connected = false;
-            }
-            emit('close', conn);
-        });
-        conn.on('error', (err) => {
-            emit('error', err.message || err.type || 'Conn error');
-        });
-    }
-
-    /** 傳訊 (自動 JSON) — 房主會廣播給所有 guest, guest 送給房主 */
+    /**
+     * 廣播 (主機) / 送給主機 (訪客)
+     */
     function send(obj) {
-        if (state.isHost) {
-            for (let i = 0; i < state.conns.length; i++) {
-                const c = state.conns[i];
-                if (c && c.open) {
-                    try { c.send(obj); } catch (e) {}
-                }
+        for (const ph of state.peers.values()) {
+            if (ph.open) {
+                try { ph.dc.send(typeof obj === 'string' ? obj : JSON.stringify(obj)); } catch (e) {}
             }
-        } else if (state.conn && state.connected) {
-            try { state.conn.send(obj); } catch (e) {}
         }
     }
 
@@ -216,44 +523,65 @@
     }
 
     function cleanup() {
-        if (state.conns && state.conns.length) {
-            for (let i = 0; i < state.conns.length; i++) {
-                try { state.conns[i].close(); } catch (e) {}
-            }
-            state.conns = [];
+        for (const ph of state.peers.values()) {
+            try { ph.close(); } catch (e) {}
         }
-        if (state.conn) {
-            try { state.conn.close(); } catch (e) {}
-            state.conn = null;
+        state.peers.clear();
+
+        if (state.ws) {
+            try {
+                state.ws.onmessage = null;
+                state.ws.onopen = null;
+                state.ws.onerror = null;
+                state.ws.onclose = null;
+                state.ws.close();
+            } catch (e) {}
+            state.ws = null;
         }
-        if (state.peer) {
-            try { state.peer.destroy(); } catch (e) {}
-            state.peer = null;
-        }
-        state.connected = false;
+        state.wsReady = false;
         state.code = null;
         state.isHost = false;
+        state.mySlot = null;
         state.capacity = 2;
     }
 
+    function isConnected() {
+        for (const ph of state.peers.values()) {
+            if (ph.open) return true;
+        }
+        return false;
+    }
+
+    // ==== 對外匯出 ====
     global.Multiplayer = {
-        host: host,
-        join: join,
-        send: send,
-        disconnect: disconnect,
-        on: on,
-        off: off,
-        offAll: offAll,
+        host,
+        join,
+        send,
+        disconnect,
+        brawlMatch,
+        on, off, offAll,
         isHost: () => state.isHost,
-        isConnected: () => state.connected,
+        isConnected,
         getCode: () => state.code,
         getCapacity: () => state.capacity,
-        getConnections: () => state.conns,
-        connectionCount: () => state.isHost ? state.conns.length : (state.conn ? 1 : 0),
-        // 公開 ID_PREFIX 常數供外部用於建構固定房號
-        ID_PREFIX: ID_PREFIX,
-        // 標記大亂鬥模式, 讓 relay 做距離剪枝
+        getConnections: () => Array.from(state.peers.values()),
+        connectionCount: () => {
+            let n = 0;
+            for (const ph of state.peers.values()) if (ph.open) n++;
+            return n;
+        },
+        // 相容舊 API (PeerJS 版曾暴露此常數, 新版不用, 保留為空字串避免 undefined)
+        ID_PREFIX: '',
         _brawlMode: false,
-        setBrawlMode: function (on) { this._brawlMode = !!on; }
+        setBrawlMode(on) {
+            state._brawlMode = !!on;
+            this._brawlMode = !!on;
+        },
+        // 選填: 讓 signaling 訊息有玩家名 (純 logging 用; 實際遊戲內名字由 main.js 透過 DC hello 同步)
+        setName(n) {
+            state.myName = String(n || 'Player').slice(0, 16);
+        },
+        // Debug
+        _state: state
     };
 })(window);
