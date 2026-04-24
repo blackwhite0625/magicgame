@@ -12,29 +12,15 @@
     const ID_PREFIX = 'magicrunes-';
     const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉易混字元
 
-    // ICE servers: STUN (NAT 型別探測) + TURN (嚴格 NAT 下中繼)
-    // 沒有 TURN 的話, 僅 symmetric NAT 雙方無法直連 — 會只有 LAN 才連得上
-    // openrelay.metered.ca 是公開免費 TURN 服務 (metered.ca 提供)
+    // ICE servers: STUN + 最小可用 TURN (太多 TURN 會延遲 ICE gathering)
     const ICE_SERVERS = [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:global.stun.twilio.com:3478' },
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
+        // Metered 公開 TURN (穩定可用)
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
     ];
     const PEER_OPTIONS = {
         config: { iceServers: ICE_SERVERS }

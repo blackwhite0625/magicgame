@@ -1907,8 +1907,29 @@
         setupMpHandlers();
         game.mp.isHost = false;
         game.mp.players = {};
-        showMpStatus('連線中...', false);
-        window.Multiplayer.join(code, (err) => showMpStatus('加入失敗: ' + err, true));
+        showMpStatus('連線中... (握手可能需 10-20 秒)', false);
+        let handled = false;
+        // 進度提示: 5s / 10s / 15s 更新狀態
+        const t5 = setTimeout(() => { if (!handled) showMpStatus('連線中... 正在 NAT 穿透 (5s)', false); }, 5000);
+        const t10 = setTimeout(() => { if (!handled) showMpStatus('連線中... 嘗試 TURN 中繼 (10s)', false); }, 10000);
+        const t20 = setTimeout(() => {
+            if (!handled) {
+                handled = true;
+                showMpStatus('連線逾時, 對方可能離線或 NAT 無法穿透. 請確認房號後再試.', true);
+                try { window.Multiplayer.disconnect(); } catch (e) {}
+            }
+        }, 25000);
+        // 當連線成功 (on('open')) 或 assignSlot 到達時清除逾時
+        const clearTimers = () => {
+            handled = true;
+            clearTimeout(t5); clearTimeout(t10); clearTimeout(t20);
+        };
+        const onceOpen = () => { clearTimers(); window.Multiplayer.off('open', onceOpen); };
+        window.Multiplayer.on('open', onceOpen);
+        window.Multiplayer.join(code, (err) => {
+            clearTimers();
+            showMpStatus('加入失敗: ' + err, true);
+        });
     }
 
     // ==== 大亂鬥: 自動加入公開戰場 ====
@@ -1919,10 +1940,10 @@
 
     function autoJoinBrawl() {
         const BRAWL_CODE = 'BRAWL1';
-        // WebRTC NAT 穿透在慢網 / TURN 中繼下可能要 10 秒以上, 放寬 timeout 避免誤判
-        const JOIN_TIMEOUT = 15000;    // join 後 15 秒仍沒收到 assignSlot → 放棄, 自己當 host
-        const HOST_TIMEOUT = 10000;    // host 註冊 10 秒沒 open → 放棄
-        const MAX_TRIES = 3;           // 減少嘗試次數 (每次更長更耐心)
+        // WebRTC NAT 穿透 + TURN 中繼在慢網下可達 20 秒, 必須給足耐心
+        const JOIN_TIMEOUT = 22000;    // join 後 22 秒仍沒收到 assignSlot → 放棄, 自己當 host
+        const HOST_TIMEOUT = 12000;    // host 註冊 12 秒沒 open → 放棄
+        const MAX_TRIES = 4;
 
         const overlay = document.getElementById('brawl-connecting');
         const statusEl = document.getElementById('brawl-connecting-status');
